@@ -1,4 +1,7 @@
 #include <Windows.h>
+#include "../../../core/logging/log.h"
+#include <cstdio>
+#include <array>
 
 #include <algorithm>
 #include <string_view>
@@ -21,6 +24,33 @@ constexpr std::string_view kNameSuffix = ":scenario_client";
 // agree; a shorter one here would truncate the name and find nothing.
 static_assert(layouts::kSpawnStemCapacity == state::build_data::spawn_sets::kStemNameCapacity);
 
+/** DIAG ONLY: reports one class-scan intake with its package family. */
+void diag_intake(const char* kind, std::wstring_view family, std::string_view stem) noexcept {
+    std::array<char, 96> narrow{};
+    std::size_t length = 0;
+    for (const wchar_t value : family) {
+        if (length + 1 >= narrow.size()) {
+            break;
+        }
+        const bool printable = (value >= L'a' && value <= L'z') || (value >= L'A' && value <= L'Z')
+                               || (value >= L'0' && value <= L'9') || value == L'_';
+        narrow[length++] = printable ? static_cast<char>(value) : '?';
+    }
+    std::array<char, core::log::kLineCapacity> line{};
+    const int written = std::snprintf(line.data(),
+                                      line.size(),
+                                      "ev=diag kind=%s family=%s stem=%.*s",
+                                      kind,
+                                      narrow.data(),
+                                      static_cast<int>(stem.size()),
+                                      stem.data());
+    if (written > 0) {
+        core::log::write(core::log::Channel::state,
+                         core::log::Level::info,
+                         {line.data(), static_cast<std::size_t>(written)});
+    }
+}
+
 /**
  * Records one live scenario tag and the map stem of the package it came from.
  * The stem is the key the destination's spawn sets are grouped under.
@@ -41,6 +71,7 @@ bool collect_tag(void* context, const reader::ClassEntry& entry) noexcept {
         live.stem = {};
         live.stemLength = 0;
     }
+    diag_intake("scenario", entry.packageFamily, {live.stem.data(), live.stemLength});
     return true;
 }
 

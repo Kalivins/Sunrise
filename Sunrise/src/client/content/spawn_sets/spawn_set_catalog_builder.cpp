@@ -1,4 +1,7 @@
 #include "spawn_set_catalog_builder.h"
+#include "../../../core/logging/log.h"
+#include <cstdio>
+#include <array>
 
 #include <algorithm>
 #include <limits>
@@ -514,6 +517,32 @@ bool activity_family(std::wstring_view packageFamily) noexcept {
            && marker + kActivities.size() + kPackageIdSuffix == packageFamily.size();
 }
 
+/** DIAG ONLY: reports one class-scan intake with its package family. */
+void diag_intake(const char* kind, std::wstring_view family, std::string_view stem) noexcept {
+    std::array<char, 96> narrow{};
+    std::size_t length = 0;
+    for (const wchar_t value : family) {
+        if (length + 1 >= narrow.size()) {
+            break;
+        }
+        const char value_ascii = lowercase_ascii(value);
+        narrow[length++] = value_ascii != 0 ? value_ascii : static_cast<char>('?');
+    }
+    std::array<char, core::log::kLineCapacity> line{};
+    const int written = std::snprintf(line.data(),
+                                      line.size(),
+                                      "ev=diag kind=%s family=%s stem=%.*s",
+                                      kind,
+                                      narrow.data(),
+                                      static_cast<int>(stem.size()),
+                                      stem.data());
+    if (written > 0) {
+        core::log::write(core::log::Channel::state,
+                         core::log::Level::info,
+                         {line.data(), static_cast<std::size_t>(written)});
+    }
+}
+
 /** Adds one class-scan match to an unfinished pass. */
 bool add_entry(Storage& storage, const package_reader::ClassEntry& entry) noexcept {
     if (storage.collected || storage.invalid || entry.tag == 0
@@ -522,8 +551,10 @@ bool add_entry(Storage& storage, const package_reader::ClassEntry& entry) noexce
     }
     Entry& output = storage.entries[storage.entryCount];
     if (!normalize_stem(entry.packageFamily, output.stem, output.stemLength)) {
+        diag_intake("spawn_normalize_fail", entry.packageFamily, {});
         return false;
     }
+    diag_intake("spawn", entry.packageFamily, {output.stem.data(), output.stemLength});
     output.tag = entry.tag;
     output.packageId = tables::package_of(entry.tag);
     output.activityPackage = activity_family(entry.packageFamily) ? 1U : 0U;
