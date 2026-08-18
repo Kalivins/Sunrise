@@ -123,10 +123,18 @@ bool apply(destination::DestinationSelection& selection) noexcept {
     selection.hasArrivalBubbleOverride = true;
     selection.sliceSetOverride = value.sliceSet;
     selection.hasSliceSetOverride = true;
-    // With no set chosen the absent hash goes out, so the Client searches the loaded world itself.
-    // A map-wide set is not proof that the arrival bubble holds one of its points.
-    selection.spawnSetOverride = value.hasSpawnSetHash ? value.spawnSetHash : kAbsentSpawnSetHash;
-    selection.hasSpawnSetOverride = true;
+    // A chosen set wins. With none chosen an authored arrival is kept rather than replaced by the
+    // absent hash: forcing is the only way to reach some destinations, so replacing it there would
+    // make the authored table unreachable for exactly the ones that need it. With neither, the
+    // absent hash goes out and the Client searches the loaded world itself, because a map-wide set
+    // is not proof that the arrival bubble holds one of its points.
+    if (value.hasSpawnSetHash) {
+        selection.spawnSetOverride = value.spawnSetHash;
+        selection.hasSpawnSetOverride = true;
+    } else if (!selection.hasSpawnSetOverride) {
+        selection.spawnSetOverride = kAbsentSpawnSetHash;
+        selection.hasSpawnSetOverride = true;
+    }
     // The Client authors this descriptor and the host replays it. Rebuilding it from named fields
     // drops the ones with no name, and the Client then holds its lobby on Waiting for Other
     // Players.
