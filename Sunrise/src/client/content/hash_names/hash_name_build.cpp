@@ -108,6 +108,29 @@ void collect_blob(void* context,
     return true;
 }
 
+/** DIAG ONLY: reports the name the sweep resolved for each probed key. */
+void diag_report_keys() noexcept {
+    constexpr std::uint32_t kDiagKeys[] = {
+        0xEE5B2DD3U, 0x75A466F8U, 0x2191C0ABU, 0xC2DACAF7U, 0x39774EE1U};
+    for (const std::uint32_t key : kDiagKeys) {
+        state::build_data::hash_names::Name found{};
+        const bool named = state::build_data::find_hash_name(key, found);
+        std::array<char, core::log::kLineCapacity> line{};
+        const int written = std::snprintf(line.data(),
+                                          line.size(),
+                                          "ev=diag stage=key_name key=0x%08X named=%u name=%.*s",
+                                          key,
+                                          named ? 1U : 0U,
+                                          static_cast<int>(named ? found.nameLength : 0),
+                                          found.name.data());
+        if (written > 0) {
+            core::log::write(core::log::Channel::state,
+                             core::log::Level::info,
+                             {line.data(), static_cast<std::size_t>(written)});
+        }
+    }
+}
+
 /**
  * Reports the pass so a boot with no bubble names says which step lost them.
  * @param storage Pass storage holding every count.
@@ -146,6 +169,7 @@ void report(const Storage& storage, const char* result) noexcept {
     const bool published = state::build_data::publish_hash_names(
         std::span(storage.resolved).first(storage.resolvedCount));
     report(storage, published ? result : "publish");
+    diag_report_keys();
     return published;
 }
 

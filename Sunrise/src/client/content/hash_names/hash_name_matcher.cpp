@@ -107,6 +107,14 @@ bool collect_targets(Storage& storage) noexcept {
             }
         }
     }
+    // DIAG ONLY: object keys seen in the scenario walk, so the sweep names them too.
+    constexpr std::uint32_t kDiagKeys[] = {
+        0xEE5B2DD3U, 0x75A466F8U, 0x2191C0ABU, 0xC2DACAF7U, 0x39774EE1U};
+    for (const std::uint32_t key : kDiagKeys) {
+        if (storage.targetCount < storage.targets.size()) {
+            storage.targets[storage.targetCount++] = key;
+        }
+    }
     auto end = storage.targets.begin() + static_cast<std::ptrdiff_t>(storage.targetCount);
     std::sort(storage.targets.begin(), end);
     storage.targetCount = static_cast<std::size_t>(std::unique(storage.targets.begin(), end)
