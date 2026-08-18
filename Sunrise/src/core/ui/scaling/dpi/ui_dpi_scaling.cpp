@@ -55,7 +55,7 @@ bool calculate(UINT reportedDpi, UINT viewportWidth, UINT viewportHeight, Value&
                                              kMinimumViewportScale,
                                              kMaximumViewportScale);
     // At base DPI the UI may shrink. Above it, DPI and framebuffer scale do not stack.
-    const float environmentalScale =
+    const float    environmentalScale   =
         dpiScale <= 1.0F ? viewportScale : (std::max)(viewportScale, dpiScale);
     const float scale =
         (std::clamp)(environmentalScale * kAuthoredComfortScale, kMinimumScale, kMaximumScale);
