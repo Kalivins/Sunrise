@@ -8,9 +8,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <span>
 #include <string_view>
 
 #include "../../../core/logging/log.h"
+#include "../../executable/image.h"
 #include "../../hooking/detour.h"
 #include "../../patterns/image_scan.h"
 
@@ -134,6 +136,66 @@ std::int32_t __fastcall validate_header(const std::uint32_t* validationMask,
         validationMask, packageGroup, buildSignature, expectedFileSize, localeToken, 1, header);
 }
 
+/** DIAG ONLY: reports the sites that load one negative result code into eax in the loaded image. */
+void diag_scan_code(std::int32_t code) noexcept {
+    executable::ExecutableImage main{};
+    if (!executable::inspect_main_module(main)) {
+        core::log::write(core::log::Channel::client,
+                         core::log::Level::warn,
+                         "ev=diag stage=code_scan result=no_image");
+        return;
+    }
+    std::array<std::byte, 5> pattern{};
+    pattern[0] = std::byte{0xB8};
+    const auto value = static_cast<std::uint32_t>(code);
+    for (std::size_t index = 0; index < 4; ++index) {
+        pattern[index + 1] = static_cast<std::byte>((value >> (index * 8U)) & 0xFFU);
+    }
+    std::size_t found = 0;
+    std::array<std::byte*, 8> hits{};
+    for (std::size_t section = 0; section < main.count; ++section) {
+        const std::span<std::byte> span = main.sections[section];
+        if (span.size() < pattern.size()) {
+            continue;
+        }
+        for (std::size_t offset = 0; offset + pattern.size() <= span.size(); ++offset) {
+            if (std::memcmp(span.data() + offset, pattern.data(), pattern.size()) != 0) {
+                continue;
+            }
+            if (found < hits.size()) {
+                hits[found] = span.data() + offset;
+            }
+            ++found;
+        }
+    }
+    std::array<char, core::log::kLineCapacity> line{};
+    int written = std::snprintf(line.data(),
+                                line.size(),
+                                "ev=diag stage=code_scan code=%d sections=%zu sites=%zu",
+                                code,
+                                main.count,
+                                found);
+    if (written > 0) {
+        core::log::write(core::log::Channel::client,
+                         core::log::Level::info,
+                         {line.data(), static_cast<std::size_t>(written)});
+    }
+    const std::size_t shown = found < hits.size() ? found : hits.size();
+    for (std::size_t index = 0; index < shown; ++index) {
+        written = std::snprintf(line.data(),
+                                line.size(),
+                                "ev=diag stage=code_site code=%d index=%zu address=%p",
+                                code,
+                                index,
+                                static_cast<void*>(hits[index]));
+        if (written > 0) {
+            core::log::write(core::log::Channel::client,
+                             core::log::Level::info,
+                             {line.data(), static_cast<std::size_t>(written)});
+        }
+    }
+}
+
 } // namespace
 
 /** Attaches the native package-header trust bypass. */
@@ -187,6 +249,10 @@ bool install() noexcept {
     core::log::write(core::log::Channel::client,
                      core::log::Level::info,
                      "ev=package_trust stage=attach result=ok mode=package_integrity_bypass");
+    // DIAG ONLY: -89 is a positive control the mod already patches; -86 is the unhandled code.
+    diag_scan_code(-89);
+    diag_scan_code(-95);
+    diag_scan_code(-86);
     return true;
 }
 
