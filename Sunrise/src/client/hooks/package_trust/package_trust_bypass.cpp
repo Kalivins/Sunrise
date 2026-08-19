@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include <span>
+#include <string>
 #include <string_view>
 
 #include "../../../core/logging/log.h"
@@ -136,68 +137,84 @@ std::int32_t __fastcall validate_header(const std::uint32_t* validationMask,
         validationMask, packageGroup, buildSignature, expectedFileSize, localeToken, 1, header);
 }
 
-/** DIAG ONLY: reports the sites that load one negative result code into eax in the loaded image. */
-void diag_scan_code(std::int32_t code) noexcept {
-    executable::ExecutableImage main{};
-    if (!executable::inspect_main_module(main)) {
+/** DIAG ONLY: writes the whole mapped, unpacked module image to disk for offline disassembly. */
+void diag_dump_image() noexcept {
+    auto* const base = reinterpret_cast<std::uint8_t*>(GetModuleHandleW(nullptr));
+    if (base == nullptr) {
         core::log::write(core::log::Channel::client,
                          core::log::Level::warn,
-                         "ev=diag stage=code_scan result=no_image");
+                         "ev=diag stage=image_dump result=no_base");
         return;
     }
-    // The 4-byte little-endian immediate of the code, searched under any opcode so a result that
-    // is not a `mov eax, imm32` still shows the instruction that carries it.
-    std::array<std::byte, 4> immediate{};
-    const auto value = static_cast<std::uint32_t>(code);
-    for (std::size_t index = 0; index < 4; ++index) {
-        immediate[index] = static_cast<std::byte>((value >> (index * 8U)) & 0xFFU);
+    std::int32_t peOffset = 0;
+    std::memcpy(&peOffset, base + 0x3C, sizeof peOffset);
+    std::uint32_t sizeOfImage = 0;
+    std::memcpy(&sizeOfImage, base + peOffset + 80, sizeof sizeOfImage);
+
+    wchar_t exePath[MAX_PATH] = {};
+    const DWORD pathLength = GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    if (pathLength == 0 || pathLength >= MAX_PATH) {
+        core::log::write(core::log::Channel::client,
+                         core::log::Level::warn,
+                         "ev=diag stage=image_dump result=no_path");
+        return;
     }
-    std::size_t found = 0;
-    std::array<std::byte*, 12> hits{};
-    std::array<std::uint8_t, 12> prefix{};
-    for (std::size_t section = 0; section < main.count; ++section) {
-        const std::span<std::byte> span = main.sections[section];
-        if (span.size() < immediate.size() + 1) {
-            continue;
-        }
-        for (std::size_t offset = 1; offset + immediate.size() <= span.size(); ++offset) {
-            if (std::memcmp(span.data() + offset, immediate.data(), immediate.size()) != 0) {
-                continue;
-            }
-            if (found < hits.size()) {
-                hits[found] = span.data() + offset - 1;
-                prefix[found] = static_cast<std::uint8_t>(span[offset - 1]);
-            }
-            ++found;
-        }
+    std::wstring dumpPath(exePath);
+    const std::size_t slash = dumpPath.find_last_of(L"\\/");
+    dumpPath = (slash == std::wstring::npos ? std::wstring{} : dumpPath.substr(0, slash + 1))
+               + L"sunrise_image_dump.bin";
+
+    const HANDLE file = CreateFileW(
+        dumpPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        core::log::write(core::log::Channel::client,
+                         core::log::Level::warn,
+                         "ev=diag stage=image_dump result=no_file");
+        return;
     }
+    DWORD written = 0;
+    const std::uint64_t marker = 0x53554E5244554D50ULL; // "SUNRDUMP"
+    const std::uint64_t sizeField = sizeOfImage;
+    (void)WriteFile(file, &marker, sizeof marker, &written, nullptr);
+    (void)WriteFile(file, &sizeField, sizeof sizeField, &written, nullptr);
+
+    std::uint8_t* cursor = base;
+    std::uint8_t* const end = base + sizeOfImage;
+    std::uint64_t regions = 0;
+    std::uint64_t bytes = 0;
+    while (cursor < end) {
+        MEMORY_BASIC_INFORMATION info{};
+        if (VirtualQuery(cursor, &info, sizeof info) == 0) {
+            break;
+        }
+        auto* const regionBase = static_cast<std::uint8_t*>(info.BaseAddress);
+        const bool readable =
+            info.State == MEM_COMMIT && (info.Protect & (PAGE_NOACCESS | PAGE_GUARD)) == 0;
+        if (readable) {
+            const std::uint64_t rva = static_cast<std::uint64_t>(regionBase - base);
+            const std::uint64_t size = info.RegionSize;
+            (void)WriteFile(file, &rva, sizeof rva, &written, nullptr);
+            (void)WriteFile(file, &size, sizeof size, &written, nullptr);
+            (void)WriteFile(file, regionBase, static_cast<DWORD>(size), &written, nullptr);
+            ++regions;
+            bytes += size;
+        }
+        cursor = regionBase + info.RegionSize;
+    }
+    (void)CloseHandle(file);
+
     std::array<char, core::log::kLineCapacity> line{};
-    int written = std::snprintf(line.data(),
-                                line.size(),
-                                "ev=diag stage=code_scan code=%d sections=%zu sites=%zu",
-                                code,
-                                main.count,
-                                found);
-    if (written > 0) {
+    const int length = std::snprintf(line.data(),
+                                     line.size(),
+                                     "ev=diag stage=image_dump result=ok regions=%llu bytes=%llu "
+                                     "size_of_image=%u",
+                                     regions,
+                                     bytes,
+                                     sizeOfImage);
+    if (length > 0) {
         core::log::write(core::log::Channel::client,
                          core::log::Level::info,
-                         {line.data(), static_cast<std::size_t>(written)});
-    }
-    const std::size_t shown = found < hits.size() ? found : hits.size();
-    for (std::size_t index = 0; index < shown; ++index) {
-        written =
-            std::snprintf(line.data(),
-                          line.size(),
-                          "ev=diag stage=code_site code=%d index=%zu opcode=0x%02X address=%p",
-                          code,
-                          index,
-                          static_cast<unsigned>(prefix[index]),
-                          static_cast<void*>(hits[index]));
-        if (written > 0) {
-            core::log::write(core::log::Channel::client,
-                             core::log::Level::info,
-                             {line.data(), static_cast<std::size_t>(written)});
-        }
+                         {line.data(), static_cast<std::size_t>(length)});
     }
 }
 
@@ -254,10 +271,8 @@ bool install() noexcept {
     core::log::write(core::log::Channel::client,
                      core::log::Level::info,
                      "ev=package_trust stage=attach result=ok mode=package_integrity_bypass");
-    // DIAG ONLY: -89 is a positive control the mod already patches; -86 is the unhandled code.
-    diag_scan_code(-89);
-    diag_scan_code(-95);
-    diag_scan_code(-86);
+    // DIAG ONLY: dump the unpacked image so the -86 origin can be disassembled offline.
+    diag_dump_image();
     return true;
 }
 
