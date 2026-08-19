@@ -145,25 +145,28 @@ void diag_scan_code(std::int32_t code) noexcept {
                          "ev=diag stage=code_scan result=no_image");
         return;
     }
-    std::array<std::byte, 5> pattern{};
-    pattern[0] = std::byte{0xB8};
+    // The 4-byte little-endian immediate of the code, searched under any opcode so a result that
+    // is not a `mov eax, imm32` still shows the instruction that carries it.
+    std::array<std::byte, 4> immediate{};
     const auto value = static_cast<std::uint32_t>(code);
     for (std::size_t index = 0; index < 4; ++index) {
-        pattern[index + 1] = static_cast<std::byte>((value >> (index * 8U)) & 0xFFU);
+        immediate[index] = static_cast<std::byte>((value >> (index * 8U)) & 0xFFU);
     }
     std::size_t found = 0;
-    std::array<std::byte*, 8> hits{};
+    std::array<std::byte*, 12> hits{};
+    std::array<std::uint8_t, 12> prefix{};
     for (std::size_t section = 0; section < main.count; ++section) {
         const std::span<std::byte> span = main.sections[section];
-        if (span.size() < pattern.size()) {
+        if (span.size() < immediate.size() + 1) {
             continue;
         }
-        for (std::size_t offset = 0; offset + pattern.size() <= span.size(); ++offset) {
-            if (std::memcmp(span.data() + offset, pattern.data(), pattern.size()) != 0) {
+        for (std::size_t offset = 1; offset + immediate.size() <= span.size(); ++offset) {
+            if (std::memcmp(span.data() + offset, immediate.data(), immediate.size()) != 0) {
                 continue;
             }
             if (found < hits.size()) {
-                hits[found] = span.data() + offset;
+                hits[found] = span.data() + offset - 1;
+                prefix[found] = static_cast<std::uint8_t>(span[offset - 1]);
             }
             ++found;
         }
@@ -182,12 +185,14 @@ void diag_scan_code(std::int32_t code) noexcept {
     }
     const std::size_t shown = found < hits.size() ? found : hits.size();
     for (std::size_t index = 0; index < shown; ++index) {
-        written = std::snprintf(line.data(),
-                                line.size(),
-                                "ev=diag stage=code_site code=%d index=%zu address=%p",
-                                code,
-                                index,
-                                static_cast<void*>(hits[index]));
+        written =
+            std::snprintf(line.data(),
+                          line.size(),
+                          "ev=diag stage=code_site code=%d index=%zu opcode=0x%02X address=%p",
+                          code,
+                          index,
+                          static_cast<unsigned>(prefix[index]),
+                          static_cast<void*>(hits[index]));
         if (written > 0) {
             core::log::write(core::log::Channel::client,
                              core::log::Level::info,
