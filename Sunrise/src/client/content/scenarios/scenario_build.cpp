@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdio>
+#include <string_view>
 
 #include "../../../core/logging/log.h"
 #include "../../../state/build_data/runtime.h"
@@ -46,6 +47,35 @@ void report(const Storage& storage,
     }
 }
 
+/** DIAG ONLY: dumps the bubbles of the two Mercury strike scenarios, per bubble. */
+void diag_strike_bubbles(const layouts::Definition& row) noexcept {
+    const std::string_view name(row.name.data(), row.nameLength);
+    if (name != "strike_pact" && name != "strike_bond") {
+        return;
+    }
+    std::array<char, core::log::kLineCapacity> line{};
+    const std::size_t bubbles = row.bubbleCount;
+    for (std::size_t index = 0; index < bubbles; ++index) {
+        const int written =
+            std::snprintf(line.data(),
+                          line.size(),
+                          "ev=diag stage=strike_bubble name=%.*s idx=%zu hash=0x%08X state=%u "
+                          "state_count=%u map_index=%u",
+                          static_cast<int>(name.size()),
+                          name.data(),
+                          index,
+                          row.bubbleHashes[index],
+                          static_cast<unsigned>(row.bubbleStates[index]),
+                          static_cast<unsigned>(row.bubbleStateCounts[index]),
+                          static_cast<unsigned>(row.bubbleMapIndices[index]));
+        if (written > 0) {
+            core::log::write(core::log::Channel::state,
+                             core::log::Level::info,
+                             {line.data(), static_cast<std::size_t>(written)});
+        }
+    }
+}
+
 /**
  * Walks the next batch of rosters and publishes the domain once the walk finishes.
  * @param source Package directory and borrowed block keys.
@@ -67,6 +97,12 @@ void report(const Storage& storage,
     const bool published = state::build_data::publish_scenario_layouts(
         rows, std::span(storage.roster.groups).first(storage.roster.groupCount));
     report(storage, storage.keptCount, rostered, published ? "ok" : "publish");
+    // DIAG ONLY
+    if (published) {
+        for (const layouts::Definition& diagRow : rows) {
+            diag_strike_bubbles(diagRow);
+        }
+    }
     storage.roster = {};
     return published;
 }
