@@ -1,8 +1,6 @@
 ﻿#include <algorithm>
-#include <cstdio>
 
 #include "bubble_host.h"
-#include "core/logging/log.h"
 #include "tick_runtime.h"
 
 namespace sunrise::server::gameplay::physics::host {
@@ -97,23 +95,6 @@ TickResult BubbleHost::tick(WorldHandle handle) noexcept {
         return result;
     }
     Storage::WorldSlot& slot = storage_->worlds[slotIndex];
-    // Dev diagnostic: localize the first-tick unhealthy return the encounter force-open hits. Bounded
-    // so a healthy world ticking at rate does not spam the log.
-    static int g_diagTicks = 0;
-    const bool diag = (++g_diagTicks) <= 40;
-    if (diag) {
-        std::uint64_t djf = 0;
-        std::uint64_t djt = 0;
-        const bool djk = storage_->journal->cursors(slot.logicalWorldId, djf, djt);
-        char buf[192];
-        std::snprintf(buf, sizeof buf,
-                      "ev=encounter stage=tick_diag entry healthy=%d runner=%d inTick=%d jknown=%d "
-                      "jtail=%llu jcur=%llu",
-                      slot.healthy ? 1 : 0, slot.runner.healthy() ? 1 : 0, slot.inTick ? 1 : 0,
-                      djk ? 1 : 0, static_cast<unsigned long long>(djt),
-                      static_cast<unsigned long long>(slot.journalCursor));
-        core::log::write(core::log::Channel::server, core::log::Level::info, buf);
-    }
     if (!slot.healthy || !slot.runner.healthy() || slot.inTick) {
         result.status = HostStatus::unhealthy;
         return result;
@@ -162,14 +143,6 @@ TickResult BubbleHost::tick(WorldHandle handle) noexcept {
     slot.inTick = true;
     record_stage(slotIndex, TickStage::logicalCommit);
     result.world = slot.runner.advance(1);
-    if (diag) {
-        char buf[128];
-        std::snprintf(buf, sizeof buf,
-                      "ev=encounter stage=tick_diag advance ticksRun=%u healthy=%d",
-                      static_cast<unsigned>(result.world.ticksRun),
-                      result.world.healthy ? 1 : 0);
-        core::log::write(core::log::Channel::server, core::log::Level::info, buf);
-    }
     slot.inTick = false;
     if (result.world.ticksRun != 1 || !result.world.healthy) {
         if (slot.controller != nullptr) {

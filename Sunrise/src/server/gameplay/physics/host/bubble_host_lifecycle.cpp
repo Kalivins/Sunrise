@@ -77,15 +77,6 @@ HostStatus BubbleHost::open_world(const WorldOpenRequest& request,
 #endif
     const bool useBlueprint =
         policy == nullptr && (encounterTest != nullptr || encounter_test_flag());
-    {
-        std::string gate = "encounter: open_world policy_null=";
-        gate += policy == nullptr ? "1" : "0";
-        gate += " env=";
-        gate += encounterTest != nullptr ? "1" : "0";
-        gate += " flag=";
-        gate += encounter_test_flag() ? "1" : "0";
-        core::log::write(core::log::Channel::server, core::log::Level::info, gate);
-    }
     const world::ActivityPolicyManifest selectedManifest =
         useBlueprint
             ? encounter::BlueprintActivityPolicy::manifest_for(request.scene.contentBuild)

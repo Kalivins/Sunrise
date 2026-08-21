@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <limits>
 
-#include "core/logging/log.h"
-
 namespace sunrise::server::gameplay::physics::world {
 namespace {
 
@@ -254,8 +252,6 @@ bool WorldRunner::run_tick() noexcept {
         return false;
     }
     if (!begin_tick_transaction()) {
-        core::log::write(core::log::Channel::server, core::log::Level::info,
-                         "ev=encounter stage=runtick fail=begin_txn");
         healthy_ = false;
         return false;
     }
@@ -274,8 +270,6 @@ bool WorldRunner::run_tick() noexcept {
         }
     }
     if (!healthy_) {
-        core::log::write(core::log::Channel::server, core::log::Level::info,
-                         "ev=encounter stage=runtick fail=apply_command");
         rollback_tick_transaction();
         return false;
     }
@@ -291,22 +285,16 @@ bool WorldRunner::run_tick() noexcept {
         commandQueue_, manifest_, identity_, source, nextTick, policySourceSequence_);
     policy_->pre_tick(tickContext, commands);
     if (commandQueue_.overflowed()) {
-        core::log::write(core::log::Channel::server, core::log::Level::info,
-                         "ev=encounter stage=runtick fail=pretick_overflow");
         rollback_tick_transaction();
         return false;
     }
     if (!step_extension_services(commandCount)) {
-        core::log::write(core::log::Channel::server, core::log::Level::info,
-                         "ev=encounter stage=runtick fail=extension_services");
         rollback_tick_transaction();
         return false;
     }
     finalize_committed_commands(commandCount, true);
     policy_->post_tick(tickContext, committed_events(), commands);
     if (commandQueue_.overflowed()) {
-        core::log::write(core::log::Channel::server, core::log::Level::info,
-                         "ev=encounter stage=runtick fail=posttick_overflow");
         rollback_tick_transaction();
         return false;
     }

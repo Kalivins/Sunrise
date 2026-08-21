@@ -1,7 +1,5 @@
 #include <algorithm>
-#include <cstdio>
 
-#include "core/logging/log.h"
 #include "world_runner.h"
 
 namespace sunrise::server::gameplay::physics::world {
@@ -66,22 +64,6 @@ bool WorldRunner::execute_extension_command(const HostCommand& command,
         std::span(committedEvents_).subspan(committedEventCount_, available);
     const HostCommandExecutionResult result = executor_->execute_command(
         context, command, std::span(executorActors_).first(actorCount), output);
-
-    {
-        // Dev diagnostic: which extension command the real host executor rejects on the first tick.
-        static int g_extDiag = 0;
-        if (g_extDiag < 40) {
-            ++g_extDiag;
-            char buf[176];
-            std::snprintf(buf, sizeof buf,
-                          "ev=encounter stage=ext_cmd kind=%u status=%u reject=%u events=%u avail=%zu",
-                          static_cast<unsigned>(command_kind(command)),
-                          static_cast<unsigned>(result.status),
-                          static_cast<unsigned>(result.rejectReason),
-                          static_cast<unsigned>(result.eventCount), available);
-            core::log::write(core::log::Channel::server, core::log::Level::info, buf);
-        }
-    }
 
     if (result.status == HostCommandExecutionStatus::rejected) {
         if (result.eventCount != 0 || !valid_reject_reason(result.rejectReason)) {

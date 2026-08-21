@@ -24,7 +24,6 @@ file(GLOB_RECURSE WORLD_SOURCES CONFIGURE_DEPENDS
 
 add_executable(blueprint_activity_policy_test
     blueprint_activity_policy_test.cpp
-    log_stub.cpp
     ${WORLD_SOURCES}
 )
 
