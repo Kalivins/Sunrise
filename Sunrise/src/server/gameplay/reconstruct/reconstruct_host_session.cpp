@@ -16,9 +16,6 @@ namespace {
 namespace forced = state::activity::forced;
 namespace destination = state::activity::destination;
 
-/** One synthetic group-session key for the reconstructed row. Nonzero and stable across ticks. */
-constexpr std::uint64_t kReconstructGroupSession = 0x5211000000000001ULL;
-
 /**
  * A claimable region index for the reconstructed row. The only host-table constraint is that it is
  * not the unknown-region sentinel. It is NOT a real region and NOT a slice-set index; aligning it

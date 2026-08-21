@@ -16,6 +16,7 @@
 #include "../../../web_service/web_service_runtime.h"
 #include "../activity_host_manager/activity_host_manager_route.h"
 #include "../activity_message/activity_message_route.h"
+#include "../activity_message/reconstruct_join_inject.h"
 #include "../internal.h"
 #include "../matchmaking/matchmaking_route.h"
 #include "../queuez/queuez_state_validation.h"
@@ -114,6 +115,14 @@ bool process(const ServiceRoute& route,
         written = 0;
         activity_message::ActivityPlan plan{};
         bool hasTransaction = false;
+        // R2: inject one synthetic join before the real message, once R1's host row is ready. When
+        // it injects, its transaction is the one to route and the real message waits for a resend.
+        if (activity_message::inject_reconstruct_join(activity, plan, hasTransaction)) {
+            if (hasTransaction) {
+                outcome.transaction = plan;
+            }
+            return true;
+        }
         const bool processed =
             activity_message::process(activity, requestBody, plan, hasTransaction);
         if (processed && hasTransaction) {

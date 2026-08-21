@@ -1,6 +1,14 @@
 #pragma once
 
+#include <cstdint>
+
 namespace sunrise::server::gameplay::reconstruct {
+
+/**
+ * The synthetic group-session key R1 claims its host row under. R2 reads the row's allocated target
+ * back through it (host_session_for_group), so the synthetic join names the same session.
+ */
+inline constexpr std::uint64_t kReconstructGroupSession = 0x5211000000000001ULL;
 
 /**
  * Rung R1 of the offline mission-reconstruction ladder.
