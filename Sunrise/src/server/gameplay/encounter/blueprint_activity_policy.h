@@ -41,6 +41,16 @@ public:
     void configure(std::span<const BlueprintSpawn> spawns, std::span<const std::uint16_t> phaseSizes,
                    std::uint64_t objectiveCounterId, std::uint32_t bubble) noexcept;
 
+    /**
+     * Loads a small built-in wave for the in-game diagnostic hook, so a loaded mission can be driven
+     * by this policy with no external blueprint. `contentBuild` must match the scene's content build
+     * (the host validates the manifest against it before a world opens).
+     */
+    void configure_test(std::uint64_t contentBuild, std::uint32_t bubble) noexcept;
+
+    /** The manifest for a given scene content build. The host validates this before opening a world. */
+    [[nodiscard]] static world::ActivityPolicyManifest manifest_for(std::uint64_t contentBuild) noexcept;
+
     [[nodiscard]] world::ActivityPolicyManifest manifest() const noexcept override;
     [[nodiscard]] bool initialize(const world::ActivityPolicyContext& context,
                                   world::HostCommands& commands) noexcept override;
@@ -81,6 +91,7 @@ private:
     std::size_t spawnCount_{};
     std::size_t phaseCount_{};
     std::size_t currentPhase_{};
+    std::uint64_t contentBuild_{};
     std::uint32_t bubble_{1};
     std::uint64_t objectiveCounterId_{1};
     std::uint64_t aliveInPhase_{};

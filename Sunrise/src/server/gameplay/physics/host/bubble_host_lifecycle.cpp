@@ -1,6 +1,8 @@
 ﻿#include <cmath>
+#include <cstdlib>
 
 #include "bubble_host.h"
+#include "core/logging/log.h"
 #include "internal.h"
 
 namespace sunrise::server::gameplay::physics::host {
@@ -37,8 +39,15 @@ HostStatus BubbleHost::open_world(const WorldOpenRequest& request,
     }
     const std::uint64_t logicalWorldId =
         request.logicalWorldId == 0 ? request.activitySessionId : request.logicalWorldId;
+    // Diagnostic hook: with SUNRISE_ENCOUNTER_TEST set and no policy supplied, drive the loaded
+    // mission with the blueprint encounter policy (spawns a built-in test wave in the logical world).
+    const bool useBlueprint =
+        policy == nullptr && std::getenv("SUNRISE_ENCOUNTER_TEST") != nullptr;
     const world::ActivityPolicyManifest selectedManifest =
-        policy == nullptr ? scriptless_manifest(request) : policy->manifest();
+        useBlueprint
+            ? encounter::BlueprintActivityPolicy::manifest_for(request.scene.contentBuild)
+        : policy == nullptr ? scriptless_manifest(request)
+                            : policy->manifest();
     if (selectedManifest.contentBuildId != request.scene.contentBuild
         || selectedManifest.triggerBudget > mechanics::kTriggerCapacity
         || selectedManifest.queryBudget > backend::kQueryHitCapacity
@@ -91,8 +100,15 @@ HostStatus BubbleHost::open_world(const WorldOpenRequest& request,
     config.allowHostActorCommands = request.allowHostActorCommands;
     world::IActivityPolicy* selectedPolicy = policy;
     if (selectedPolicy == nullptr) {
-        slot.fallbackPolicy.configure(selectedManifest);
-        selectedPolicy = &slot.fallbackPolicy;
+        if (useBlueprint) {
+            slot.blueprintPolicy.configure_test(request.scene.contentBuild, request.scene.bubble);
+            selectedPolicy = &slot.blueprintPolicy;
+            core::log::write(core::log::Channel::server, core::log::Level::info,
+                             "encounter: blueprint test policy installed for this activity");
+        } else {
+            slot.fallbackPolicy.configure(selectedManifest);
+            selectedPolicy = &slot.fallbackPolicy;
+        }
     }
     if (!slot.runner.open(config, selectedPolicy)) {
         slot.navigation.shutdown();

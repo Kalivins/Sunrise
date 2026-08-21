@@ -59,6 +59,21 @@ void BlueprintActivityPolicy::configure(std::span<const BlueprintSpawn> spawns,
     }
 }
 
+void BlueprintActivityPolicy::configure_test(std::uint64_t contentBuild,
+                                             std::uint32_t bubble) noexcept {
+    // Built-in two-phase wave (a pair, then a single "boss"), Homecoming plaza coordinates. No combat
+    // profile is set, so the actors spawn without a combatant binding the host might reject.
+    const BlueprintSpawn spawns[] = {
+        {world::Transform{world::Vector3{73.5F, -431.0F, 1.0F}, {}}, {}},
+        {world::Transform{world::Vector3{80.2F, -457.3F, 1.0F}, {}}, {}},
+        {world::Transform{world::Vector3{65.9F, -478.4F, 1.0F}, {}}, {}},
+    };
+    const std::uint16_t phaseSizes[] = {2, 1};
+    configure(std::span<const BlueprintSpawn>(spawns), std::span<const std::uint16_t>(phaseSizes),
+              /*objectiveCounterId=*/1, bubble);
+    contentBuild_ = contentBuild;
+}
+
 world::PolicyCommandMeta BlueprintActivityPolicy::next_meta(world::TickId executeTick) noexcept {
     world::PolicyCommandMeta meta{};
     meta.definition = kPolicyBlueprint;
@@ -110,10 +125,11 @@ bool BlueprintActivityPolicy::in_current_phase(const world::ActorKey& actor) con
     return false;
 }
 
-world::ActivityPolicyManifest BlueprintActivityPolicy::manifest() const noexcept {
+world::ActivityPolicyManifest
+BlueprintActivityPolicy::manifest_for(std::uint64_t contentBuild) noexcept {
     world::ActivityPolicyManifest manifest{};
     manifest.policy = kPolicyBlueprint;
-    manifest.contentBuildId = 0;
+    manifest.contentBuildId = contentBuild;
     manifest.allowedCommandMask =
         world::command_kind_mask(world::HostCommandKind::spawnActor)
         | world::command_kind_mask(world::HostCommandKind::configureCombat)
@@ -127,6 +143,10 @@ world::ActivityPolicyManifest BlueprintActivityPolicy::manifest() const noexcept
     manifest.creditBudget = 0;
     manifest.persistenceSchemaVersion = 1;
     return manifest;
+}
+
+world::ActivityPolicyManifest BlueprintActivityPolicy::manifest() const noexcept {
+    return manifest_for(contentBuild_);
 }
 
 bool BlueprintActivityPolicy::initialize(const world::ActivityPolicyContext& context,

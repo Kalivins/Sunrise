@@ -5,6 +5,7 @@
 
 #include "bubble_host.h"
 #include "fallback_policy.h"
+#include "server/gameplay/encounter/blueprint_activity_policy.h"
 
 namespace sunrise::server::gameplay::physics::host {
 
@@ -95,6 +96,7 @@ struct BubbleHost::Storage final {
     struct WorldSlot final {
         world::WorldRunner runner{};
         ScriptlessPolicy fallbackPolicy{};
+        encounter::BlueprintActivityPolicy blueprintPolicy{};
         backend::PhysicsBackend physics{};
         backend::NavigationBackend navigation{};
         mechanics::TickTimerService timers{};
