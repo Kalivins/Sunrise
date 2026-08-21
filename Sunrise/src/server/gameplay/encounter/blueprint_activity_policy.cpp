@@ -61,15 +61,31 @@ void BlueprintActivityPolicy::configure(std::span<const BlueprintSpawn> spawns,
 
 void BlueprintActivityPolicy::configure_test(std::uint64_t contentBuild,
                                              std::uint32_t bubble) noexcept {
-    // Built-in two-phase wave (a pair, then a single "boss"), Homecoming plaza coordinates. No combat
-    // profile is set, so the actors spawn without a combatant binding the host might reject.
-    const BlueprintSpawn spawns[] = {
-        {world::Transform{world::Vector3{73.5F, -431.0F, 1.0F}, {}}, {}},
-        {world::Transform{world::Vector3{80.2F, -457.3F, 1.0F}, {}}, {}},
-        {world::Transform{world::Vector3{65.9F, -478.4F, 1.0F}, {}}, {}},
-    };
-    const std::uint16_t phaseSizes[] = {2, 1};
-    configure(std::span<const BlueprintSpawn>(spawns), std::span<const std::uint16_t>(phaseSizes),
+    // Real Homecoming (mission_towerfall) beat sequence, recovered from a live client memory dump:
+    // six encounter zones in mission order, each spawning a four-Cabal Red Legion squad at the zone's
+    // real world coordinates. No combat profile is set (the host rejects an unbound combatant); the
+    // actors are logical, which is what this live test exercises.
+    constexpr std::size_t kZoneCount = 6;
+    constexpr std::uint16_t kSquadSize = 4;
+    const float zoneX[kZoneCount] = {-493.9F, -458.4F, -548.4F, -519.6F, -654.1F, -723.2F};
+    const float zoneY[kZoneCount] = {87.9F, 89.3F, -30.5F, 75.2F, 46.2F, 46.3F};
+    // Zones in order: Cabal Landing, Plaza Deck, Shield Line, Ghaul Arrival, Psion Phase-In, Escape.
+    const float memberX[kSquadSize] = {-3.0F, 3.0F, -3.0F, 3.0F};
+    const float memberY[kSquadSize] = {-3.0F, -3.0F, 3.0F, 3.0F};
+    BlueprintSpawn spawns[kZoneCount * kSquadSize];
+    std::uint16_t phaseSizes[kZoneCount];
+    std::size_t cursor = 0;
+    for (std::size_t z = 0; z < kZoneCount; ++z) {
+        for (std::size_t m = 0; m < kSquadSize; ++m) {
+            spawns[cursor++] = BlueprintSpawn{
+                world::Transform{
+                    world::Vector3{zoneX[z] + memberX[m], zoneY[z] + memberY[m], 1.0F}, {}},
+                {}};
+        }
+        phaseSizes[z] = kSquadSize;
+    }
+    configure(std::span<const BlueprintSpawn>(spawns, kZoneCount * kSquadSize),
+              std::span<const std::uint16_t>(phaseSizes, kZoneCount),
               /*objectiveCounterId=*/1, bubble);
     // The host creates objective counters through its own API (create_objective), not a policy
     // command, so the test wave cannot bring one into being; a set/add on a missing counter fails
