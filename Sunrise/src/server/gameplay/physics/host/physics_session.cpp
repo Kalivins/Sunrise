@@ -480,6 +480,11 @@ std::uint64_t g_nextForceOpen = 0;
         request.ownerEpoch = row.generation;
         request.deterministicSeed = row.hostSessionId;
         request.millimetersPerUnit = kMillimetersPerUnit;
+        // A real scene carries its extents from the destination layout; the force-open world has
+        // none, so the backend keeps the zero box and refuses the first placed body (the encounter
+        // trigger). Give it a wide bound so the trigger's static body fits and the tick stays healthy.
+        request.scene.bounds.minimum = {-5000.0F, -5000.0F, -5000.0F};
+        request.scene.bounds.maximum = {5000.0F, 5000.0F, 5000.0F};
         Bound entry{};
         const HostStatus opened = host->open_world(request, nullptr, entry.world);
         report(core::log::Level::info,

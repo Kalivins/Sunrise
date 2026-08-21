@@ -71,6 +71,11 @@ void BlueprintActivityPolicy::configure_test(std::uint64_t contentBuild,
     const std::uint16_t phaseSizes[] = {2, 1};
     configure(std::span<const BlueprintSpawn>(spawns), std::span<const std::uint16_t>(phaseSizes),
               /*objectiveCounterId=*/1, bubble);
+    // The host creates objective counters through its own API (create_objective), not a policy
+    // command, so the test wave cannot bring one into being; a set/add on a missing counter fails
+    // the tick. Zero disables the objective commands, leaving spawns and the trigger, which is what
+    // this diagnostic exercises in the live host.
+    objectiveCounterId_ = 0;
     contentBuild_ = contentBuild;
 }
 
@@ -166,11 +171,14 @@ bool BlueprintActivityPolicy::initialize(const world::ActivityPolicyContext& con
         trigger.triggerProfile = kPolicyBlueprint;
         static_cast<void>(commands.create_trigger(next_meta(kFirstExecuteTick), trigger));
 
-        world::SetObjectiveCounterCommand objective{};
-        objective.counterId = objectiveCounterId_;
-        objective.value = static_cast<std::int64_t>(aliveInPhase_);
-        objective.expectedRevision = 0;
-        static_cast<void>(commands.set_objective_counter(next_meta(kFirstExecuteTick), objective));
+        if (objectiveCounterId_ != 0) {
+            world::SetObjectiveCounterCommand objective{};
+            objective.counterId = objectiveCounterId_;
+            objective.value = static_cast<std::int64_t>(aliveInPhase_);
+            objective.expectedRevision = 0;
+            static_cast<void>(
+                commands.set_objective_counter(next_meta(kFirstExecuteTick), objective));
+        }
     }
     return true;
 }
@@ -204,11 +212,13 @@ void BlueprintActivityPolicy::post_tick(const world::PolicyTickContext& context,
         aliveInPhase_ = 0;
     }
 
-    world::SetObjectiveCounterCommand objective{};
-    objective.counterId = objectiveCounterId_;
-    objective.value = static_cast<std::int64_t>(aliveInPhase_);
-    objective.expectedRevision = 0;
-    static_cast<void>(commands.set_objective_counter(next_meta(context.tick + 1), objective));
+    if (objectiveCounterId_ != 0) {
+        world::SetObjectiveCounterCommand objective{};
+        objective.counterId = objectiveCounterId_;
+        objective.value = static_cast<std::int64_t>(aliveInPhase_);
+        objective.expectedRevision = 0;
+        static_cast<void>(commands.set_objective_counter(next_meta(context.tick + 1), objective));
+    }
 }
 
 bool BlueprintActivityPolicy::save(world::IPolicyStateWriter& writer) const noexcept {
