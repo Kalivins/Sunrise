@@ -1,5 +1,8 @@
 ﻿#include <cmath>
 #include <cstdlib>
+#include <string>
+
+#include <windows.h>
 
 #include "bubble_host.h"
 #include "core/logging/log.h"
@@ -7,6 +10,29 @@
 
 namespace sunrise::server::gameplay::physics::host {
 namespace {
+
+/** True when an encounter_test.flag file sits next to this module: a launch-agnostic diagnostic gate. */
+[[nodiscard]] bool encounter_test_flag() noexcept {
+    HMODULE module = nullptr;
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                               | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           reinterpret_cast<LPCWSTR>(&encounter_test_flag), &module)
+        == 0) {
+        return false;
+    }
+    wchar_t path[MAX_PATH];
+    const DWORD length = GetModuleFileNameW(module, path, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) {
+        return false;
+    }
+    std::wstring flag(path, length);
+    const std::size_t slash = flag.find_last_of(L"\\/");
+    if (slash == std::wstring::npos) {
+        return false;
+    }
+    flag.replace(slash + 1, std::wstring::npos, L"encounter_test.flag");
+    return GetFileAttributesW(flag.c_str()) != INVALID_FILE_ATTRIBUTES;
+}
 
 /** @return Inert manifest with bounded direct-host generic services. */
 [[nodiscard]] world::ActivityPolicyManifest
@@ -49,7 +75,8 @@ HostStatus BubbleHost::open_world(const WorldOpenRequest& request,
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
-    const bool useBlueprint = policy == nullptr && encounterTest != nullptr;
+    const bool useBlueprint =
+        policy == nullptr && (encounterTest != nullptr || encounter_test_flag());
     const world::ActivityPolicyManifest selectedManifest =
         useBlueprint
             ? encounter::BlueprintActivityPolicy::manifest_for(request.scene.contentBuild)
