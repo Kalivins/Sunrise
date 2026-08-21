@@ -94,19 +94,34 @@ bool build(const JoinEndpoint& endpoint, std::array<std::byte, kDescriptorSize>&
     std::array<std::byte, kNetAddrSize> netAddr{};
     write_net_addr(endpoint.address, endpoint.port, netAddr);
 
+    // DIAGNOSTIC (2026-08-22): maximal fill of every zero region whose semantics Sunrise's own
+    // constants name, to test the whole "descriptor is incomplete" hypothesis in one cycle. A
+    // negative here falsifies that entire family and redirects to the untested "missing client
+    // state" branch. Replicate local entry 0 into the four empty local entries [6,30) of the
+    // NetAddr, so a client that iterates the five entries finds a valid address in each, not a
+    // null one. Deliberately leave NetAddr [36,40) and [41,85) untouched: unknown semantics, and
+    // noise there could cause a self-inflicted rejection that turns a negative into a fabricated
+    // one. Revert once measured.
+    constexpr std::size_t kLocalEntrySize = 6;
+    for (std::size_t entry = 1; entry < 5; ++entry) {
+        std::copy(netAddr.begin(),
+                  netAddr.begin() + kLocalEntrySize,
+                  netAddr.begin() + entry * kLocalEntrySize);
+    }
+
     std::array<std::byte, kDescriptorSize> candidate{};
     write_memory_order(candidate, kMachineOffset, endpoint.machineId, sizeof(std::uint64_t));
     std::copy(netAddr.begin(), netAddr.end(), candidate.begin() + kNetAddrOffset);
-    // DIAGNOSTIC (2026-08-22): the join key occupies [94,110), 16 bytes = dtls::kSecurityKeySize,
-    // and that constant's comment reads "It is the join key the descriptor advertises". Sunrise
-    // left it zero on the assumption the direct path carries no key material. Fill it with a
-    // non-zero marker to test whether the client refuses to dial on a zero join key. A wrong key
-    // only fails the later handshake; we measure arrival (stage=receive), not the handshake. Revert.
+    write_memory_order(candidate, kSessionOffset, endpoint.onlineSessionId, sizeof(std::uint64_t));
+    // Fill the join key [94,110) (= dtls::kSecurityKeySize) and the tail [118,128) with markers.
     constexpr std::size_t kJoinKeyOffset = kNetAddrOffset + kNetAddrSize;
     for (std::size_t index = 0; index < 16; ++index) {
         candidate[kJoinKeyOffset + index] = static_cast<std::byte>(0xA0 + index);
     }
-    write_memory_order(candidate, kSessionOffset, endpoint.onlineSessionId, sizeof(std::uint64_t));
+    constexpr std::size_t kTailOffset = kSessionOffset + sizeof(std::uint64_t);
+    for (std::size_t index = 0; kTailOffset + index < kDescriptorSize; ++index) {
+        candidate[kTailOffset + index] = static_cast<std::byte>(0xB0 + index);
+    }
     output = candidate;
     return true;
 }
