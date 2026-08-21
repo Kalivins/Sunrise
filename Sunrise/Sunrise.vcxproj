@@ -782,6 +782,7 @@
     <ClCompile Include="src\server\gameplay\physics\world\authority_manager.cpp" />
     <ClCompile Include="src\server\gameplay\physics\world\command_queue.cpp" />
     <ClCompile Include="src\server\gameplay\physics\world\host_command.cpp" />
+    <ClCompile Include="src\server\gameplay\encounter\blueprint_activity_policy.cpp" />
     <ClCompile Include="src\server\gameplay\physics\world\world_runner.cpp" />
     <ClCompile Include="src\server\gameplay\physics\world\world_runner_acl.cpp" />
     <ClCompile Include="src\server\gameplay\physics\world\world_runner_commands.cpp" />
@@ -1386,6 +1387,7 @@
     <ClInclude Include="src\server\gameplay\physics\world\command_queue.h" />
     <ClInclude Include="src\server\gameplay\physics\world\host_command.h" />
     <ClInclude Include="src\server\gameplay\physics\world\host_command_executor.h" />
+    <ClInclude Include="src\server\gameplay\encounter\blueprint_activity_policy.h" />
     <ClInclude Include="src\server\gameplay\physics\world\world_runner.h" />
     <ClInclude Include="src\server\gameplay\physics\world\world_types.h" />
     <ClInclude Include="src\middleware\gameplay\descriptor\join_descriptor.h" />
