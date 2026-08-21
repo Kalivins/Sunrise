@@ -18,25 +18,28 @@ struct BlueprintSpawn final {
 };
 
 /**
- * A minimal, data-driven mission policy — the encounter-engine vertical slice against Sunrise's
- * IActivityPolicy boundary.
+ * A data-driven mission policy — the encounter engine against Sunrise's IActivityPolicy boundary.
  *
- * On `initialize` it spawns one wave of combatants at their real blueprint transforms, gives each a
- * combat profile, arms a trigger volume over the wave, and sets an objective counter to the wave
- * size. On `post_tick` it watches committed `actorRemoved` events for the actors it spawned; each
- * removal decrements the objective, and when the wave is clear the objective is marked complete.
+ * The wave is split into ordered **phases**. `initialize` spawns phase 0 at its blueprint transforms
+ * and sets the objective counter. `post_tick` watches committed `actorRemoved` events for the current
+ * phase; when the phase is clear it spawns the next one, and when the last phase clears the objective
+ * is complete. Everything goes through the typed `HostCommands` sink, so the whole multi-phase
+ * encounter runs inside the deterministic logical `WorldRunner` with no client, wire, or wall-clock.
  *
- * Everything it does goes through the existing typed `HostCommands` sink, so the whole encounter runs
- * inside the deterministic logical `WorldRunner` with no client, wire, or wall-clock input. The wave
- * positions come from `encounter_extract.py` (the offline blueprint tool).
+ * Spawn transforms and phase layout come from `encounter_extract.py` (the offline blueprint tool):
+ * a mission is a flat list of spawns plus a per-phase size (e.g. plaza wave, reinforcements, boss).
  */
 class BlueprintActivityPolicy final : public world::IActivityPolicy {
 public:
-    static constexpr std::size_t kMaxSpawns = 32;
+    static constexpr std::size_t kMaxSpawns = 64;
+    static constexpr std::size_t kMaxPhases = 16;
 
-    /** Loads one wave. Call before the world opens. `spawns` beyond kMaxSpawns are ignored. */
-    void configure(std::span<const BlueprintSpawn> spawns, std::uint64_t objectiveCounterId,
-                   std::uint32_t bubble) noexcept;
+    /**
+     * Loads a multi-phase wave. `spawns` are laid out phase by phase; `phaseSizes[i]` is how many
+     * spawns phase i owns (their sum is clamped to the number of spawns). Call before the world opens.
+     */
+    void configure(std::span<const BlueprintSpawn> spawns, std::span<const std::uint16_t> phaseSizes,
+                   std::uint64_t objectiveCounterId, std::uint32_t bubble) noexcept;
 
     [[nodiscard]] world::ActivityPolicyManifest manifest() const noexcept override;
     [[nodiscard]] bool initialize(const world::ActivityPolicyContext& context,
@@ -49,28 +52,38 @@ public:
     [[nodiscard]] bool save(world::IPolicyStateWriter& writer) const noexcept override;
     [[nodiscard]] bool load(world::IPolicyStateReader& reader) noexcept override;
 
-    /** Inspection for tests and for driving a wave/phase state machine above this policy. */
-    [[nodiscard]] std::size_t wave_size() const noexcept { return spawnCount_; }
-    [[nodiscard]] std::uint64_t alive_count() const noexcept { return aliveCount_; }
+    /** Inspection for tests and for a wave/phase state machine above this policy. */
+    [[nodiscard]] std::size_t total_spawns() const noexcept { return spawnCount_; }
+    [[nodiscard]] std::size_t phase_count() const noexcept { return phaseCount_; }
+    [[nodiscard]] std::size_t current_phase() const noexcept { return currentPhase_; }
+    [[nodiscard]] std::uint64_t alive_in_phase() const noexcept { return aliveInPhase_; }
     [[nodiscard]] bool objective_complete() const noexcept { return objectiveComplete_; }
     [[nodiscard]] world::ActorKey spawned_actor(std::size_t index) const noexcept;
 
 private:
     /** Mutable per-tick state serialized for deterministic rollback. */
     struct PersistState final {
-        std::uint64_t aliveCount{};
+        std::uint64_t aliveInPhase{};
         std::uint64_t nextCommandId{};
+        std::uint32_t currentPhase{};
         std::uint8_t objectiveComplete{};
     };
 
     [[nodiscard]] world::PolicyCommandMeta next_meta(world::TickId executeTick) noexcept;
+    void spawn_phase(std::size_t phase, world::TickId executeTick,
+                     world::HostCommands& commands) noexcept;
+    [[nodiscard]] bool in_current_phase(const world::ActorKey& actor) const noexcept;
 
     std::array<BlueprintSpawn, kMaxSpawns> spawns_{};
     std::array<world::ActorKey, kMaxSpawns> spawnedActors_{};
+    std::array<std::uint16_t, kMaxPhases> phaseSize_{};
+    std::array<std::uint16_t, kMaxPhases> phaseStart_{};
     std::size_t spawnCount_{};
+    std::size_t phaseCount_{};
+    std::size_t currentPhase_{};
     std::uint32_t bubble_{1};
     std::uint64_t objectiveCounterId_{1};
-    std::uint64_t aliveCount_{};
+    std::uint64_t aliveInPhase_{};
     std::uint64_t nextCommandId_{1};
     bool objectiveComplete_{};
 };

@@ -74,16 +74,19 @@ world::HostCommand make_remove(const world::WorldRunner& runner, world::ActorKey
 } // namespace
 
 int main() {
-    // A three-combatant wave at distinct blueprint transforms (Homecoming sq_deck_* style positions).
+    // Three Cabal at distinct blueprint transforms, split into two phases: a wave of two, then a
+    // single "boss". Positions are Homecoming sq_deck_* style.
     const world::BlueprintRef cabal{0xCABA1001U, 1U};
     const enc::BlueprintSpawn spawns[] = {
         {world::Transform{world::Vector3{73.5F, -431.0F, 1.0F}, {}}, cabal},
         {world::Transform{world::Vector3{80.2F, -457.3F, 1.0F}, {}}, cabal},
         {world::Transform{world::Vector3{65.9F, -478.4F, 1.0F}, {}}, cabal},
     };
+    const std::uint16_t phaseSizes[] = {2, 1};
 
     enc::BlueprintActivityPolicy policy;
-    policy.configure(std::span<const enc::BlueprintSpawn>(spawns), /*objectiveCounterId=*/42,
+    policy.configure(std::span<const enc::BlueprintSpawn>(spawns),
+                     std::span<const std::uint16_t>(phaseSizes), /*objectiveCounterId=*/42,
                      /*bubble=*/1);
 
     StubExecutor executor;
@@ -95,30 +98,35 @@ int main() {
     config.allowHostActorCommands = true;
 
     // WorldRunner is large (command queues, actor stores, rollback buffers) -> heap, not the stack.
+    std::uint64_t seq = 100;
     auto runner = std::make_unique<world::WorldRunner>();
     check(runner->open(config, &policy), "world opens with the blueprint policy");
 
-    // Tick 1 drains the initialize spawns -> the wave exists in the logical world.
-    const world::AdvanceResult spawnTick = runner->advance(1);
-    check(spawnTick.healthy, "spawn tick is healthy");
-    check(runner->actor_count() == 3, "three actors spawned from the blueprint");
-    check(policy.wave_size() == 3, "policy reports the wave size");
-    check(policy.alive_count() == 3, "policy tracks three alive");
-    check(!policy.objective_complete(), "objective not complete while the wave lives");
+    // Tick 1 drains the initialize spawns -> phase 0 (two combatants) exists.
+    check(runner->advance(1).healthy, "phase-0 spawn tick is healthy");
+    check(policy.phase_count() == 2, "policy has two phases");
+    check(runner->actor_count() == 2, "phase 0 spawned two actors");
+    check(policy.current_phase() == 0, "starts on phase 0");
+    check(policy.alive_in_phase() == 2, "two alive in phase 0");
+    check(!policy.objective_complete(), "not complete during phase 0");
 
-    // Remove each spawned actor; the policy watches actorRemoved and clears its objective.
-    for (std::size_t i = 0; i < policy.wave_size(); ++i) {
-        const world::CommandSubmitStatus status =
-            runner->submit(make_remove(*runner, policy.spawned_actor(i),
-                                       static_cast<std::uint64_t>(100 + i)));
-        check(status == world::CommandSubmitStatus::accepted, "remove command accepted");
-    }
+    // Clear phase 0; the policy advances to phase 1 and queues its spawn for the next tick.
+    runner->submit(make_remove(*runner, policy.spawned_actor(0), seq++));
+    runner->submit(make_remove(*runner, policy.spawned_actor(1), seq++));
+    check(runner->advance(1).healthy, "phase-0 clear tick is healthy");
+    check(policy.current_phase() == 1, "advanced to phase 1 when phase 0 cleared");
+    check(policy.alive_in_phase() == 1, "phase 1 expects one");
+    check(!policy.objective_complete(), "not complete at the phase boundary");
 
-    const world::AdvanceResult clearTick = runner->advance(1);
-    check(clearTick.healthy, "clear tick is healthy");
-    check(runner->actor_count() == 0, "all actors removed");
-    check(policy.alive_count() == 0, "policy tracks zero alive");
-    check(policy.objective_complete(), "objective complete once the wave is clear");
+    // The following tick drains the queued phase-1 (boss) spawn.
+    check(runner->advance(1).healthy, "phase-1 spawn tick is healthy");
+    check(runner->actor_count() == 1, "phase 1 spawned the boss actor");
+
+    // Clear phase 1 -> objective complete.
+    runner->submit(make_remove(*runner, policy.spawned_actor(2), seq++));
+    check(runner->advance(1).healthy, "final tick is healthy");
+    check(runner->actor_count() == 0, "all actors cleared");
+    check(policy.objective_complete(), "objective complete once the last phase is clear");
 
     std::printf("\n%s (%d failure(s))\n", g_failures == 0 ? "ALL PASSED" : "FAILURES", g_failures);
     return g_failures == 0 ? 0 : 1;

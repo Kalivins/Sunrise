@@ -24,6 +24,7 @@ constexpr world::TickId kFirstExecuteTick{1U};
 } // namespace
 
 void BlueprintActivityPolicy::configure(std::span<const BlueprintSpawn> spawns,
+                                        std::span<const std::uint16_t> phaseSizes,
                                         std::uint64_t objectiveCounterId,
                                         std::uint32_t bubble) noexcept {
     spawnCount_ = spawns.size() < kMaxSpawns ? spawns.size() : kMaxSpawns;
@@ -32,6 +33,30 @@ void BlueprintActivityPolicy::configure(std::span<const BlueprintSpawn> spawns,
     }
     objectiveCounterId_ = objectiveCounterId != 0 ? objectiveCounterId : 1;
     bubble_ = bubble != 0 ? bubble : 1;
+
+    // Build phase boundaries; unspecified layout becomes a single phase of everything.
+    phaseCount_ = 0;
+    std::size_t cursor = 0;
+    for (std::uint16_t size : phaseSizes) {
+        if (phaseCount_ >= kMaxPhases || cursor >= spawnCount_) {
+            break;
+        }
+        const std::size_t remaining = spawnCount_ - cursor;
+        const std::uint16_t take =
+            static_cast<std::uint16_t>(size < remaining ? size : remaining);
+        if (take == 0) {
+            continue;
+        }
+        phaseStart_[phaseCount_] = static_cast<std::uint16_t>(cursor);
+        phaseSize_[phaseCount_] = take;
+        cursor += take;
+        ++phaseCount_;
+    }
+    if (phaseCount_ == 0 && spawnCount_ > 0) {
+        phaseStart_[0] = 0;
+        phaseSize_[0] = static_cast<std::uint16_t>(spawnCount_);
+        phaseCount_ = 1;
+    }
 }
 
 world::PolicyCommandMeta BlueprintActivityPolicy::next_meta(world::TickId executeTick) noexcept {
@@ -41,6 +66,48 @@ world::PolicyCommandMeta BlueprintActivityPolicy::next_meta(world::TickId execut
     meta.executeTick = executeTick;
     meta.policyOwnerId = kPolicyOwner;
     return meta;
+}
+
+void BlueprintActivityPolicy::spawn_phase(std::size_t phase, world::TickId executeTick,
+                                          world::HostCommands& commands) noexcept {
+    if (phase >= phaseCount_) {
+        return;
+    }
+    const std::size_t begin = phaseStart_[phase];
+    const std::size_t end = begin + phaseSize_[phase];
+    for (std::size_t i = begin; i < end && i < spawnCount_; ++i) {
+        const world::ActorKey actor{static_cast<world::ActorId>(i + 1), world::kFirstGeneration};
+        spawnedActors_[i] = actor;
+
+        world::SpawnActorCommand spawn{};
+        spawn.actor = actor;
+        spawn.transform = spawns_[i].transform;
+        spawn.bubble = bubble_;
+        spawn.initialAuthorityGeneration = world::kFirstGeneration;
+        spawn.authorityMode = world::MotionAuthorityMode::host;
+        static_cast<void>(commands.spawn_actor(next_meta(executeTick), spawn));
+
+        if (world::valid_blueprint(spawns_[i].combatProfile)) {
+            world::ConfigureCombatCommand combat{};
+            combat.actor = actor;
+            combat.combatProfile = spawns_[i].combatProfile;
+            static_cast<void>(commands.configure_combat(next_meta(executeTick), combat));
+        }
+    }
+}
+
+bool BlueprintActivityPolicy::in_current_phase(const world::ActorKey& actor) const noexcept {
+    if (currentPhase_ >= phaseCount_) {
+        return false;
+    }
+    const std::size_t begin = phaseStart_[currentPhase_];
+    const std::size_t end = begin + phaseSize_[currentPhase_];
+    for (std::size_t i = begin; i < end && i < spawnCount_; ++i) {
+        if (world::equal_actor(actor, spawnedActors_[i])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 world::ActivityPolicyManifest BlueprintActivityPolicy::manifest() const noexcept {
@@ -65,30 +132,13 @@ world::ActivityPolicyManifest BlueprintActivityPolicy::manifest() const noexcept
 bool BlueprintActivityPolicy::initialize(const world::ActivityPolicyContext& context,
                                          world::HostCommands& commands) noexcept {
     static_cast<void>(context);
+    currentPhase_ = 0;
+    objectiveComplete_ = phaseCount_ == 0;
 
-    for (std::size_t i = 0; i < spawnCount_; ++i) {
-        const world::ActorKey actor{static_cast<world::ActorId>(i + 1), world::kFirstGeneration};
-        spawnedActors_[i] = actor;
+    if (phaseCount_ > 0) {
+        spawn_phase(0, kFirstExecuteTick, commands);
+        aliveInPhase_ = phaseSize_[0];
 
-        world::SpawnActorCommand spawn{};
-        spawn.actor = actor;
-        spawn.transform = spawns_[i].transform;
-        spawn.bubble = bubble_;
-        spawn.initialAuthorityGeneration = world::kFirstGeneration;
-        spawn.authorityMode = world::MotionAuthorityMode::host;
-        if (!ok(commands.spawn_actor(next_meta(kFirstExecuteTick), spawn))) {
-            return false;
-        }
-
-        if (world::valid_blueprint(spawns_[i].combatProfile)) {
-            world::ConfigureCombatCommand combat{};
-            combat.actor = actor;
-            combat.combatProfile = spawns_[i].combatProfile;
-            static_cast<void>(commands.configure_combat(next_meta(kFirstExecuteTick), combat));
-        }
-    }
-
-    if (spawnCount_ > 0) {
         world::CreateTriggerCommand trigger{};
         trigger.triggerId = kTriggerId;
         trigger.transform = spawns_[0].transform;
@@ -98,13 +148,10 @@ bool BlueprintActivityPolicy::initialize(const world::ActivityPolicyContext& con
 
         world::SetObjectiveCounterCommand objective{};
         objective.counterId = objectiveCounterId_;
-        objective.value = static_cast<std::int64_t>(spawnCount_);
+        objective.value = static_cast<std::int64_t>(aliveInPhase_);
         objective.expectedRevision = 0;
         static_cast<void>(commands.set_objective_counter(next_meta(kFirstExecuteTick), objective));
     }
-
-    aliveCount_ = spawnCount_;
-    objectiveComplete_ = spawnCount_ == 0;
     return true;
 }
 
@@ -118,29 +165,35 @@ void BlueprintActivityPolicy::post_tick(const world::PolicyTickContext& context,
                                         std::span<const world::CommittedEvent> committedEvents,
                                         world::HostCommands& commands) noexcept {
     for (const world::CommittedEvent& event : committedEvents) {
-        if (event.kind != world::CommittedEventKind::actorRemoved) {
-            continue;
-        }
-        for (std::size_t i = 0; i < spawnCount_; ++i) {
-            if (world::equal_actor(event.actor, spawnedActors_[i]) && aliveCount_ > 0) {
-                --aliveCount_;
-                break;
-            }
+        if (event.kind == world::CommittedEventKind::actorRemoved && in_current_phase(event.actor)
+            && aliveInPhase_ > 0) {
+            --aliveInPhase_;
         }
     }
 
-    if (aliveCount_ == 0 && !objectiveComplete_ && spawnCount_ > 0) {
-        objectiveComplete_ = true;
-        world::SetObjectiveCounterCommand objective{};
-        objective.counterId = objectiveCounterId_;
-        objective.value = 0;
-        objective.expectedRevision = 0;
-        static_cast<void>(commands.set_objective_counter(next_meta(context.tick + 1), objective));
+    if (aliveInPhase_ != 0 || objectiveComplete_) {
+        return;
     }
+
+    if (currentPhase_ + 1 < phaseCount_) {
+        ++currentPhase_;
+        spawn_phase(currentPhase_, context.tick + 1, commands);
+        aliveInPhase_ = phaseSize_[currentPhase_];
+    } else {
+        objectiveComplete_ = true;
+        aliveInPhase_ = 0;
+    }
+
+    world::SetObjectiveCounterCommand objective{};
+    objective.counterId = objectiveCounterId_;
+    objective.value = static_cast<std::int64_t>(aliveInPhase_);
+    objective.expectedRevision = 0;
+    static_cast<void>(commands.set_objective_counter(next_meta(context.tick + 1), objective));
 }
 
 bool BlueprintActivityPolicy::save(world::IPolicyStateWriter& writer) const noexcept {
-    const PersistState state{aliveCount_, nextCommandId_,
+    const PersistState state{aliveInPhase_, nextCommandId_,
+                             static_cast<std::uint32_t>(currentPhase_),
                              static_cast<std::uint8_t>(objectiveComplete_ ? 1 : 0)};
     std::array<std::byte, sizeof(PersistState)> bytes{};
     std::memcpy(bytes.data(), &state, sizeof(PersistState));
@@ -154,8 +207,9 @@ bool BlueprintActivityPolicy::load(world::IPolicyStateReader& reader) noexcept {
     }
     PersistState state{};
     std::memcpy(&state, bytes.data(), sizeof(PersistState));
-    aliveCount_ = state.aliveCount;
+    aliveInPhase_ = state.aliveInPhase;
     nextCommandId_ = state.nextCommandId;
+    currentPhase_ = state.currentPhase;
     objectiveComplete_ = state.objectiveComplete != 0;
     return true;
 }
