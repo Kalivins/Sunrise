@@ -41,8 +41,11 @@ HostStatus BubbleHost::open_world(const WorldOpenRequest& request,
         request.logicalWorldId == 0 ? request.activitySessionId : request.logicalWorldId;
     // Diagnostic hook: with SUNRISE_ENCOUNTER_TEST set and no policy supplied, drive the loaded
     // mission with the blueprint encounter policy (spawns a built-in test wave in the logical world).
-    const bool useBlueprint =
-        policy == nullptr && std::getenv("SUNRISE_ENCOUNTER_TEST") != nullptr;
+#if defined(_MSC_VER)
+#pragma warning(suppress : 4996)
+#endif
+    const char* const encounterTest = std::getenv("SUNRISE_ENCOUNTER_TEST");
+    const bool useBlueprint = policy == nullptr && encounterTest != nullptr;
     const world::ActivityPolicyManifest selectedManifest =
         useBlueprint
             ? encounter::BlueprintActivityPolicy::manifest_for(request.scene.contentBuild)
