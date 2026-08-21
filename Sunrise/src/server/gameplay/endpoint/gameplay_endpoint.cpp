@@ -202,9 +202,13 @@ bool initialize() noexcept {
     const bool embedded = configured.topology == settings::Topology::embedded;
     ReleaseSRWLockExclusive(&g_lock);
     report(core::log::Level::info,
-           "ev=gameplay stage=endpoint result=ok mode=%s port=%u",
+           "ev=gameplay stage=endpoint result=ok mode=%s port=%u advertised=%u.%u.%u.%u",
            embedded ? "embedded" : "external",
-           static_cast<unsigned>(configured.port));
+           static_cast<unsigned>(configured.port),
+           static_cast<unsigned>(configured.advertisedAddress[0]),
+           static_cast<unsigned>(configured.advertisedAddress[1]),
+           static_cast<unsigned>(configured.advertisedAddress[2]),
+           static_cast<unsigned>(configured.advertisedAddress[3]));
     return true;
 }
 
