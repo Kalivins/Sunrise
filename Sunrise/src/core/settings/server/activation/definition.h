@@ -44,6 +44,11 @@ struct Settings {
      * link's membership block, and a body that does not carry the local player destroys it.
      */
     bool activityPublicMembership{false};
+    /**
+     * Rung R1 of the offline mission reconstruction. Seeds one activity-host row for the forced
+     * destination so a synthetic join can bind. Off by default, and needs an active override.
+     */
+    bool reconstructHostSession{false};
 };
 
 } // namespace sunrise::core::settings::server::activation

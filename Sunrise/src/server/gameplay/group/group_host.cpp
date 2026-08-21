@@ -17,6 +17,7 @@
 #include "../endpoint/gameplay_endpoint.h"
 #include "../gameplay_log.h"
 #include "../peer/peer_transport.h"
+#include "../reconstruct/reconstruct_host_session.h"
 #include "group_host_sessions.h"
 #include "group_migration_receipts.h"
 
@@ -766,6 +767,8 @@ bool publish_membership(const state::gameplay::Endpoint& peer,
 /** Retries any publish a full reliable queue refused. */
 void service(std::uint64_t now) noexcept {
     // Outside any staged push, so the state revision it advances cannot fail a transaction guard.
+    // R1: seed the reconstructed host row before the pump allocates its target.
+    reconstruct::reconstruct_service();
     allocate_claimed_host_sessions();
     // The peer drops a stale target locally and sends no leave for it. Such a record shows up
     // only as the least recently named one over the capacity.

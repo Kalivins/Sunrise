@@ -807,6 +807,7 @@
     <ClCompile Include="src\middleware\gameplay\group\member_messages.cpp" />
     <ClCompile Include="src\server\gameplay\group\group_host.cpp" />
     <ClCompile Include="src\server\gameplay\group\group_host_sessions.cpp" />
+    <ClCompile Include="src\server\gameplay\reconstruct\reconstruct_host_session.cpp" />
     <ClCompile Include="src\middleware\gameplay\nat\introduction.cpp" />
     <ClCompile Include="src\middleware\gameplay\dtls\dtls_messages.cpp" />
     <ClCompile Include="src\middleware\gameplay\dtls\association_keys.cpp" />

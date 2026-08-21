@@ -48,6 +48,11 @@ bool Parser::activation_settings(server::activation::Settings& output) noexcept 
                 return false;
             }
             candidate.activityPublicMembership = value;
+        } else if (key == "reconstruct_host_session") {
+            if (!boolean(value)) {
+                return false;
+            }
+            candidate.reconstructHostSession = value;
         } else if (!skip_value(0)) {
             return false;
         }
