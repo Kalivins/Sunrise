@@ -9,7 +9,7 @@
 # If the logical WorldRunner pulls extra translation units at link time, add their globs below
 # (mechanics/*.cpp) — that is the expected CI-iteration step, not a redesign.
 
-cmake_minimum_required(VERSION 3.31)
+cmake_minimum_required(VERSION 3.20)
 project(sunrise_encounter_tests CXX)
 
 set(CMAKE_CXX_STANDARD 20)

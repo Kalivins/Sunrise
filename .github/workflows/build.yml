@@ -35,3 +35,24 @@ jobs:
             build/x64/Release/steam_api64.dll
             build/x64/Release/steam_api64.pdb
           if-no-files-found: error
+
+  encounter-test:
+    name: Encounter test x64
+    runs-on: windows-2025-vs2026
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S Sunrise/tests -B build/tests -A x64
+
+      - name: Build
+        run: cmake --build build/tests --config Release
+
+      - name: Run test
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path build/tests -Recurse -Filter blueprint_activity_policy_test.exe | Select-Object -First 1
+          if (-not $exe) { throw "test executable not found" }
+          & $exe.FullName
+          if ($LASTEXITCODE -ne 0) { throw "test failed (exit $LASTEXITCODE)" }
