@@ -9,6 +9,7 @@
 // Verified only on the fork CI toolchain (the project does not build locally).
 
 #include <cstdio>
+#include <memory>
 
 #include "server/gameplay/encounter/blueprint_activity_policy.h"
 #include "server/gameplay/physics/world/host_command.h"
@@ -93,13 +94,14 @@ int main() {
     config.deterministicSeed = 1;
     config.allowHostActorCommands = true;
 
-    world::WorldRunner runner;
-    check(runner.open(config, &policy), "world opens with the blueprint policy");
+    // WorldRunner is large (command queues, actor stores, rollback buffers) -> heap, not the stack.
+    auto runner = std::make_unique<world::WorldRunner>();
+    check(runner->open(config, &policy), "world opens with the blueprint policy");
 
     // Tick 1 drains the initialize spawns -> the wave exists in the logical world.
-    const world::AdvanceResult spawnTick = runner.advance(1);
+    const world::AdvanceResult spawnTick = runner->advance(1);
     check(spawnTick.healthy, "spawn tick is healthy");
-    check(runner.actor_count() == 3, "three actors spawned from the blueprint");
+    check(runner->actor_count() == 3, "three actors spawned from the blueprint");
     check(policy.wave_size() == 3, "policy reports the wave size");
     check(policy.alive_count() == 3, "policy tracks three alive");
     check(!policy.objective_complete(), "objective not complete while the wave lives");
@@ -107,14 +109,14 @@ int main() {
     // Remove each spawned actor; the policy watches actorRemoved and clears its objective.
     for (std::size_t i = 0; i < policy.wave_size(); ++i) {
         const world::CommandSubmitStatus status =
-            runner.submit(make_remove(runner, policy.spawned_actor(i),
-                                      static_cast<std::uint64_t>(100 + i)));
+            runner->submit(make_remove(*runner, policy.spawned_actor(i),
+                                       static_cast<std::uint64_t>(100 + i)));
         check(status == world::CommandSubmitStatus::accepted, "remove command accepted");
     }
 
-    const world::AdvanceResult clearTick = runner.advance(1);
+    const world::AdvanceResult clearTick = runner->advance(1);
     check(clearTick.healthy, "clear tick is healthy");
-    check(runner.actor_count() == 0, "all actors removed");
+    check(runner->actor_count() == 0, "all actors removed");
     check(policy.alive_count() == 0, "policy tracks zero alive");
     check(policy.objective_complete(), "objective complete once the wave is clear");
 
