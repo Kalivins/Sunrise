@@ -97,7 +97,15 @@ bool build(const JoinEndpoint& endpoint, std::array<std::byte, kDescriptorSize>&
     std::array<std::byte, kDescriptorSize> candidate{};
     write_memory_order(candidate, kMachineOffset, endpoint.machineId, sizeof(std::uint64_t));
     std::copy(netAddr.begin(), netAddr.end(), candidate.begin() + kNetAddrOffset);
-    // The join key stays zero. The direct path accepts it and carries no key material.
+    // DIAGNOSTIC (2026-08-22): the join key occupies [94,110), 16 bytes = dtls::kSecurityKeySize,
+    // and that constant's comment reads "It is the join key the descriptor advertises". Sunrise
+    // left it zero on the assumption the direct path carries no key material. Fill it with a
+    // non-zero marker to test whether the client refuses to dial on a zero join key. A wrong key
+    // only fails the later handshake; we measure arrival (stage=receive), not the handshake. Revert.
+    constexpr std::size_t kJoinKeyOffset = kNetAddrOffset + kNetAddrSize;
+    for (std::size_t index = 0; index < 16; ++index) {
+        candidate[kJoinKeyOffset + index] = static_cast<std::byte>(0xA0 + index);
+    }
     write_memory_order(candidate, kSessionOffset, endpoint.onlineSessionId, sizeof(std::uint64_t));
     output = candidate;
     return true;
