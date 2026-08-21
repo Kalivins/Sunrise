@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <memory>
 #include <new>
+#include <string>
 
 #include "../../../../core/settings/settings.h"
 #include "../../../../state/activity/entity_slots/runtime.h"
@@ -69,6 +70,9 @@ struct Bound final {
     std::uint64_t nextTick{};
     std::uint64_t ticks{};
     bool occupied{};
+    // Dev diagnostic only: a world force-opened by the encounter test hook with no peer bound. The
+    // reconcile pass leaves it alone so the blueprint policy keeps ticking without a live roster.
+    bool testForced{};
 };
 
 /**
@@ -401,6 +405,105 @@ void tick_bound(Storage& table, std::size_t slot, std::uint64_t now) noexcept {
 }
 
 /**
+ * True when an `encounter_test.flag` file sits next to this module. Dev gate for the force-open
+ * diagnostic below: the offline roster never grants an activity epoch, so a normal bind never opens
+ * a world. With the flag present, the reconcile pass force-opens one world under the blueprint
+ * encounter policy so the engine can be exercised in the live game.
+ */
+[[nodiscard]] bool encounter_test_flag() noexcept {
+    HMODULE module = nullptr;
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                               | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           reinterpret_cast<LPCWSTR>(&encounter_test_flag), &module)
+        == 0) {
+        return false;
+    }
+    wchar_t path[MAX_PATH];
+    const DWORD length = GetModuleFileNameW(module, path, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) {
+        return false;
+    }
+    std::wstring flag(path, length);
+    const std::size_t slash = flag.find_last_of(L"\\/");
+    if (slash == std::wstring::npos) {
+        return false;
+    }
+    flag.replace(slash + 1, std::wstring::npos, L"encounter_test.flag");
+    return GetFileAttributesW(flag.c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
+/** Dev force-open backoff, so a world that opens then fails to tick is not reopened every slice. */
+std::uint64_t g_nextForceOpen = 0;
+
+/**
+ * Dev diagnostic: force one world open under the blueprint encounter policy.
+ *
+ * The offline roster never grants an activity epoch, so `open_bound` never clears its lease check
+ * and no world opens. With the flag present, this opens a world directly from a published host row,
+ * with no peer bound, and marks the slot so the reconcile pass leaves it alone. `open_world`
+ * installs the blueprint policy (its null-policy-plus-flag path) and `tick_bound` then drives it.
+ * Actors stay logical until squad replication is wired, so this proves the engine runs live; it
+ * does not yet make enemies visible on the client.
+ * @return True when a world was force-opened this pass.
+ */
+[[nodiscard]] bool force_open_test(Storage& table,
+                                   const std::array<group::HostSessionRow, kHostRowCapacity>& rows,
+                                   std::size_t rowCount,
+                                   std::uint64_t now) noexcept {
+    BubbleHost* host = runtime::instance();
+    if (host == nullptr) {
+        return false;
+    }
+    std::size_t slot = table.bound.size();
+    for (std::size_t index = 0; index < table.bound.size(); ++index) {
+        if (table.bound[index].occupied) {
+            return false;  // A world is already up; open at most one.
+        }
+        if (slot == table.bound.size()) {
+            slot = index;
+        }
+    }
+    if (slot == table.bound.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < rowCount; ++index) {
+        const group::HostSessionRow& row = rows[index];
+        if (row.generation == 0 || row.hostSessionId == 0) {
+            continue;
+        }
+        WorldOpenRequest request{};
+        request.scene.stableSceneId = row.hostSessionId;
+        request.scene.contentBuild = kSceneContentBuild;
+        request.scene.bubble = static_cast<std::uint32_t>(row.regionIndex);
+        request.logicalWorldId = row.hostSessionId;
+        request.activitySessionId = row.hostSessionId;
+        request.ownerEpoch = row.generation;
+        request.deterministicSeed = row.hostSessionId;
+        request.millimetersPerUnit = kMillimetersPerUnit;
+        Bound entry{};
+        const HostStatus opened = host->open_world(request, nullptr, entry.world);
+        report(core::log::Level::info,
+               "ev=encounter stage=force_open result=%s activity=0x%016llX region=%d status=%u",
+               opened == HostStatus::success ? "ok" : "fail",
+               static_cast<unsigned long long>(row.hostSessionId),
+               row.regionIndex,
+               static_cast<unsigned>(opened));
+        if (opened != HostStatus::success) {
+            continue;
+        }
+        entry.groupSessionId = row.groupSessionId;
+        entry.activitySessionId = row.hostSessionId;
+        entry.hostGeneration = row.generation;
+        entry.nextTick = now;
+        entry.occupied = true;
+        entry.testForced = true;
+        table.bound[slot] = entry;
+        return true;
+    }
+    return false;
+}
+
+/**
  * Runs one bridge pass. Only the worker thread calls this.
  * @param now Monotonic tick count in milliseconds.
  * @param reconcile True to run the close and open passes as well as the ticks.
@@ -435,6 +538,9 @@ void run_pass(std::uint64_t now, bool reconcile) noexcept {
         if (!entry.occupied) {
             continue;
         }
+        if (entry.testForced) {
+            continue;  // Dev force-open: no roster row backs it, so reconcile never closes it.
+        }
         const group::HostSessionRow* row = find_host_row(rows, rowCount, entry.groupSessionId);
         // A rebound host row is a different activity, so the world it opened is finished even
         // though the group session id has not changed.
@@ -445,6 +551,13 @@ void run_pass(std::uint64_t now, bool reconcile) noexcept {
             close_bound(*table, slot);
             clear_attempt(*table, closed);
         }
+    }
+
+    // Dev diagnostic: when the offline roster never leases an epoch, no peer bind ever opens a
+    // world. The flag forces one open so the encounter engine can be driven in the live game.
+    if (encounter_test_flag() && now >= g_nextForceOpen) {
+        g_nextForceOpen = now + kOpenRetryMs;
+        static_cast<void>(force_open_test(*table, rows, rowCount, now));
     }
 
     for (std::size_t index = 0; index < admittedCount; ++index) {
