@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cstdarg>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 
@@ -91,6 +92,43 @@ Framed frame_sense_update(const message::Request& request) noexcept {
            static_cast<unsigned long long>(update.epoch.first),
            static_cast<unsigned long long>(update.epoch.second),
            update.tailBits);
+    // DIAGNOSTIC sense-delta capture. The client answers the roster with a sense_update whose delta
+    // (schema 0x80808769) shares its wire layout with the server->client squad.place command, so a
+    // real captured delta resolves the encoder's open questions (per-list presence bit vs. length
+    // prefix, the two depth-cut branches) offline through the recovered grammar. Only a non-empty
+    // delta carries anything, and the head of the body holds the epoch then the delta, so a bounded
+    // hex prefix is enough. To be removed once the layout is read.
+    if (update.tailBits != 0
+        && core::log::accepts(core::log::Channel::server, core::log::Level::debug)) {
+        constexpr std::size_t kDumpCap = 400;
+        const std::size_t dumpBytes =
+            request.payload.size() < kDumpCap ? request.payload.size() : kDumpCap;
+        std::array<char, core::log::kLineCapacity> line{};
+        int used = std::snprintf(line.data(),
+                                 line.size(),
+                                 "ev=activity stage=sense_dump bytes=%zu tail=%u hex=",
+                                 request.payload.size(),
+                                 update.tailBits);
+        for (std::size_t index = 0;
+             index < dumpBytes && used > 0 && static_cast<std::size_t>(used) + 3 < line.size();
+             ++index) {
+            const int printed =
+                std::snprintf(line.data() + used,
+                              line.size() - static_cast<std::size_t>(used),
+                              "%02x",
+                              static_cast<unsigned>(std::to_integer<unsigned char>(
+                                  request.payload[index])));
+            if (printed <= 0) {
+                break;
+            }
+            used += printed;
+        }
+        if (used > 0) {
+            core::log::write(core::log::Channel::server,
+                             core::log::Level::debug,
+                             {line.data(), static_cast<std::size_t>(used)});
+        }
+    }
     // The group loop behind the sense delta has no recovered width, so the body is retained
     // rather than walked.
     return {update.tailBits == 0 ? Verdict::framed : Verdict::partial, consumed};
