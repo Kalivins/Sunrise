@@ -101,6 +101,13 @@ private:
     [[nodiscard]] bool
     activity_settings(state::activity::defaults::ActivityDefaults& output) noexcept;
     /**
+     * Parses the sense_command post-epoch bit-program as an array of [width, value] pairs.
+     * @param output Receives the bit-program only after the whole array is valid.
+     * @return True when every width is 1..64 and the pairs fit the fixed step storage.
+     */
+    [[nodiscard]] bool
+    command_body(state::activity::defaults::ActivityDefaults& output) noexcept;
+    /**
      * Parses one local destination and its small numeric launch policy.
      * @param output Receives the candidate only after all supported fields are valid together.
      * @return True when every required field appears once with a canonical value.

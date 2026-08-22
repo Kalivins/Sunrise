@@ -520,6 +520,7 @@
     <ClCompile Include="src\server\bap\encrypted\push\queuez\queuez_change_character.cpp" />
     <ClCompile Include="src\server\bap\encrypted\push\queuez\queuez_select_character.cpp" />
     <ClCompile Include="src\server\bap\encrypted\push\activity\activity_message_push.cpp" />
+    <ClCompile Include="src\server\bap\encrypted\push\activity\activity_command_push.cpp" />
     <ClCompile Include="src\server\bap\encrypted\push\activity\activity_roster_push.cpp" />
     <ClCompile Include="src\server\bap\encrypted\push\activity\activity_roster_snapshot.cpp" />
     <ClCompile Include="src\server\bap\encrypted\push\activity\activity_roster_report.cpp" />

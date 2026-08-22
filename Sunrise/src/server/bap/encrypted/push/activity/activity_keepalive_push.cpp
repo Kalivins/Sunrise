@@ -14,6 +14,7 @@
 #include "../../activity_message/definition.h"
 #include "../../bap_connection_publication.h"
 #include "activity_arrival.h"
+#include "activity_command_push.h"
 #include "activity_global_state_push.h"
 #include "activity_membership_push.h"
 #include "activity_roster_push.h"
@@ -283,6 +284,12 @@ bool consume_activity_keepalive(Session& session,
     // The keepalive always carries the roster, in or out of a transition.
     published = append_roster_notification(
                     session, scratch, key, nextSendNonce, scratch.framed, framedSize, false)
+                || published;
+    // An optional server->client command rides the same frame after the roster, so the client
+    // applies the roster and its epoch before the command that references them. No-op unless the
+    // activity defaults enable it.
+    published = append_command_notification(
+                    session, scratch, key, nextSendNonce, scratch.framed, framedSize)
                 || published;
 
     std::array<char, core::log::kLineCapacity> line{};

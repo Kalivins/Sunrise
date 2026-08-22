@@ -68,6 +68,8 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
     bool hasSquadPlaceValue = false;
     bool hasSquadPlaceKey = false;
     bool hasSquadPlaceIndex = false;
+    bool hasCommandEmitEnabled = false;
+    bool hasCommandBody = false;
     if (consume('}')) {
         return true;
     }
@@ -129,6 +131,16 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
             }
             output.squadPlaceIndex = static_cast<std::uint16_t>(index);
             hasSquadPlaceIndex = true;
+        } else if (key == "command_emit_enabled") {
+            if (hasCommandEmitEnabled || !boolean(output.commandEmitEnabled)) {
+                return false;
+            }
+            hasCommandEmitEnabled = true;
+        } else if (key == "command_body") {
+            if (hasCommandBody || !command_body(output)) {
+                return false;
+            }
+            hasCommandBody = true;
         } else if (!skip_value(0)) {
             return false;
         }
@@ -222,6 +234,41 @@ bool Parser::default_destination(state::activity::defaults::DefaultDestination& 
                 return false;
             }
             output = candidate;
+            return true;
+        }
+        if (!consume(',')) {
+            return false;
+        }
+    }
+}
+
+/** Fills the sense_command bit-program from [width, value] pairs. */
+bool Parser::command_body(state::activity::defaults::ActivityDefaults& output) noexcept {
+    output.commandBodyCount = 0;
+    if (!consume('[')) {
+        return false;
+    }
+    if (consume(']')) {
+        return true;
+    }
+    for (;;) {
+        std::uint64_t width = 0;
+        std::uint64_t value = 0;
+        if (output.commandBodyCount >= output.commandBody.size() || !consume('[')
+            || !unsigned_integer(width) || !consume(',') || !unsigned_integer(value)
+            || !consume(']') || width < 1 || width > 64) {
+            return false;
+        }
+        // A value with bits above its field would silently truncate on the wire, so a program that
+        // does not fit its declared widths is rejected rather than mis-encoded.
+        if (width < 64 && value >= (static_cast<std::uint64_t>(1) << width)) {
+            return false;
+        }
+        state::activity::defaults::CommandBodyStep& step =
+            output.commandBody[output.commandBodyCount++];
+        step.width = static_cast<std::uint8_t>(width);
+        step.value = value;
+        if (consume(']')) {
             return true;
         }
         if (!consume(',')) {

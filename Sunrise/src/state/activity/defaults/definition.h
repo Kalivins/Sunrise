@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -54,6 +55,15 @@ struct ArrivalOverride final {
     bool hasSpawnSetHash{};
 };
 
+/** Bit-program steps that author a sense_command body after the fixed 128-bit epoch. */
+inline constexpr std::size_t kCommandBodyCapacity = 32;
+
+/** One MSB-first field of the settings-authored sense_command bit-program. */
+struct CommandBodyStep final {
+    std::uint8_t width{};
+    std::uint64_t value{};
+};
+
 /** Immutable activity defaults supplied while the root State is initialized. */
 struct ActivityDefaults final {
     DefaultDestination defaultDestination{};
@@ -87,6 +97,18 @@ struct ActivityDefaults final {
      */
     std::uint32_t squadPlaceKey{0xEF4EAA1E};
     std::uint16_t squadPlaceIndex{91};
+    /**
+     * Phase-2 command emitter (`sense_update`, message type 6). Type 6 is a server->client command
+     * the client parses; it never originates one (measured: an entire mission traversal shows zero
+     * inbound type 6). When enabled, the keepalive appends one sense_update whose body is the
+     * current 128-bit patch epoch followed by the bits of `commandBody`. That program starts at the
+     * delta's presence bit; the delta grammar is resolved (schema 0x80808769, reading (b): every
+     * nested field is a presence bit then its content) but the semantics are not, so the body is
+     * authored bit by bit to try one layout per boot without a rebuild. Off by default.
+     */
+    bool commandEmitEnabled{};
+    std::array<CommandBodyStep, kCommandBodyCapacity> commandBody{};
+    std::uint8_t commandBodyCount{};
 };
 
 } // namespace sunrise::state::activity::defaults
