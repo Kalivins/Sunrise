@@ -70,6 +70,15 @@ struct ActivityDefaults final {
      * datum names, which need not be that one.
      */
     bool rosterKeyOnAllSlots{};
+    /**
+     * DIAGNOSTIC squad.place width search. When enabled, every type-1 (squad) slot's message-5 auth
+     * body is written as `squadPlaceValue` on `squadPlaceWidth` bits instead of the seed-only zero
+     * it ships today. A wrong width desyncs the phase-2 block stream (the witness). Off by default;
+     * a temporary probe to find the real type-1 body width, to be removed.
+     */
+    bool squadPlaceEnabled{};
+    std::uint8_t squadPlaceWidth{};
+    std::uint64_t squadPlaceValue{};
 };
 
 } // namespace sunrise::state::activity::defaults

@@ -301,6 +301,10 @@ RosterOutcome build_roster_snapshot(Session& session,
     }
     snapshot.lifetime = kLifetimeState;
     snapshot.keyOnEveryParticipationSlot = defaults.rosterKeyOnAllSlots;
+    // DIAGNOSTIC squad.place width search: carry the probe knobs to the auth-body writer.
+    snapshot.squadPlaceEnabled = defaults.squadPlaceEnabled;
+    snapshot.squadPlaceWidth = defaults.squadPlaceWidth;
+    snapshot.squadPlaceValue = defaults.squadPlaceValue;
     // The participation record's `+0` latches only when the region index is known.
     snapshot.region = static_cast<std::uint32_t>(region.index);
     snapshot.hasRegion = true;

@@ -63,6 +63,9 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
     bool hasArrivalOverrides = false;
     bool hasRosterKeyFromIdentity = false;
     bool hasRosterKeyOnAllSlots = false;
+    bool hasSquadPlaceEnabled = false;
+    bool hasSquadPlaceWidth = false;
+    bool hasSquadPlaceValue = false;
     if (consume('}')) {
         return true;
     }
@@ -91,6 +94,25 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
                 return false;
             }
             hasRosterKeyOnAllSlots = true;
+        } else if (key == "squad_place_enabled") {
+            if (hasSquadPlaceEnabled || !boolean(output.squadPlaceEnabled)) {
+                return false;
+            }
+            hasSquadPlaceEnabled = true;
+        } else if (key == "squad_place_width") {
+            std::uint64_t width = 0;
+            if (hasSquadPlaceWidth || !unsigned_integer(width) || width > 64) {
+                return false;
+            }
+            output.squadPlaceWidth = static_cast<std::uint8_t>(width);
+            hasSquadPlaceWidth = true;
+        } else if (key == "squad_place_value") {
+            std::uint64_t value = 0;
+            if (hasSquadPlaceValue || !unsigned_integer(value)) {
+                return false;
+            }
+            output.squadPlaceValue = value;
+            hasSquadPlaceValue = true;
         } else if (!skip_value(0)) {
             return false;
         }

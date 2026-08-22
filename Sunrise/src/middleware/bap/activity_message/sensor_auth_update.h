@@ -116,6 +116,16 @@ struct Snapshot final {
      * gets the body, so filling the first slot alone can miss that object.
      */
     bool keyOnEveryParticipationSlot{};
+    /**
+     * DIAGNOSTIC squad.place width search. When enabled, every type-1 (squad) slot's auth body is
+     * written as `squadPlaceValue` on `squadPlaceWidth` bits instead of the seed-only zero it ships
+     * today. A wrong width desyncs the whole phase-2 block stream (keepalive revision stops
+     * advancing / membership is rejected) — that desync IS the witness. Off by default; a temporary
+     * probe to find the real type-1 body width, to be removed.
+     */
+    bool squadPlaceEnabled{};
+    std::uint8_t squadPlaceWidth{};
+    std::uint64_t squadPlaceValue{};
 };
 
 /**

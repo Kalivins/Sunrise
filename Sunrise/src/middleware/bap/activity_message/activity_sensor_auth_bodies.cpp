@@ -6,6 +6,7 @@ namespace {
 namespace bits = encoding::bits;
 
 /** Slot types whose auth body this module fills. Every other block is seed-only. */
+constexpr std::uint8_t kSlotTypeSquad = 1;
 constexpr std::uint8_t kSlotTypeParticipation = 13;
 constexpr std::uint8_t kSlotTypeLifetime = 17;
 constexpr std::uint8_t kSlotTypeConfiguration = 8;
@@ -139,6 +140,11 @@ auth_body_bits(const Snapshot& snapshot, std::uint8_t slotType, bool carriesPlay
     if (slotType == kSlotTypeSpawnKeys) {
         return kSpawnKeyBits;
     }
+    // DIAGNOSTIC squad.place width search: a type-1 (squad) slot ships seed-only today; when the
+    // probe is enabled it carries the candidate width so a wrong width desyncs phase 2 as a witness.
+    if (slotType == kSlotTypeSquad && snapshot.squadPlaceEnabled) {
+        return snapshot.squadPlaceWidth;
+    }
     return 0;
 }
 
@@ -165,6 +171,10 @@ bool write_auth_body(bits::Writer& writer,
         encoded = writer.write(0, 7) && writer.write(0, 5);
     } else if (slotType == kSlotTypeSpawnKeys) {
         encoded = write_spawn_keys(writer);
+    } else if (slotType == kSlotTypeSquad && snapshot.squadPlaceEnabled) {
+        // DIAGNOSTIC: write the candidate value on the candidate width. `expected` above equals the
+        // width, so the tail check still guards the position.
+        encoded = writer.write(snapshot.squadPlaceValue, snapshot.squadPlaceWidth);
     }
     return encoded && writer.bit_count() == start + expected;
 }
