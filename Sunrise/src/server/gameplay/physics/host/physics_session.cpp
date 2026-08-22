@@ -420,6 +420,42 @@ void tick_bound(Storage& table, std::size_t slot, std::uint64_t now) noexcept {
            result.stageCount,
            copied == HostStatus::success ? snapshot.actorCount : 0U,
            table.coordinators[slot].peer_count());
+
+    // Replication-drive probe (behind reconstruct_mission_policy). The fan-out that would carry the
+    // ticked world to the peer -- reconcile -> prepare_frame -> settle_frame -- has no caller today.
+    // Drive it minimally here and witness where it stalls before wiring it for real: reconcile folds
+    // the snapshot into stable allocations; prepare_frame builds a frame from the peer's planned
+    // actors. The frame is settled as lost, never sent, so this measures whether frames BUILD (and
+    // names the first missing rung when they do not), not enemies. All three calls are fail-closed.
+    if (copied != HostStatus::success
+        || !core::settings::get().server.activation.reconstructMissionPolicy) {
+        return;
+    }
+    PeerServiceAccess probeServices{};
+    if (host->peer_services(entry.world, entry.peer, probeServices) != HostStatus::success
+        || probeServices.replication == nullptr || probeServices.common == nullptr) {
+        return;
+    }
+    static std::uint64_t probeGeneration = 0;  // Worker-thread only; a plain counter is enough.
+    const replication::WorldReconcileResult reconciled =
+        table.coordinators[slot].reconcile(snapshot);
+    replication::FrameContribution contribution{};
+    const std::uint64_t packetGeneration = ++probeGeneration;
+    const replication::FramePrepareResult framed =
+        table.coordinators[slot].prepare_frame(*probeServices.replication, *probeServices.common,
+                                               packetGeneration, nullptr, contribution);
+    report(core::log::Level::info,
+           "ev=physics stage=replicate reconcile=%u coord_actors=%zu frame=%u common=%d entity=%d",
+           static_cast<unsigned>(reconciled), table.coordinators[slot].actor_count(),
+           static_cast<unsigned>(framed), contribution.commonPresent ? 1 : 0,
+           contribution.entityPresent ? 1 : 0);
+    if (framed == replication::FramePrepareResult::ready
+        || framed == replication::FramePrepareResult::full) {
+        static_cast<void>(table.coordinators[slot].settle_frame(*probeServices.replication,
+                                                                *probeServices.common, contribution,
+                                                                packetGeneration,
+                                                                replication::Outcome::lost));
+    }
 }
 
 /**
