@@ -20,7 +20,7 @@
 namespace sunrise::server::bap::encrypted::push::activity {
 namespace {
 
-namespace message = middleware::bap::activity_message::sense_update;
+namespace sense = middleware::bap::activity_message::sense_update;
 namespace patch_epoch = middleware::bap::activity_message::patch_epoch;
 namespace bits = middleware::encoding::bits;
 namespace defaults = state::activity::defaults;
@@ -38,8 +38,8 @@ namespace defaults = state::activity::defaults;
                                       const patch_epoch::PatchEpoch& epoch,
                                       const defaults::CommandBodyStep* steps,
                                       std::size_t count) noexcept {
-    bool encoded = writer.write(epoch.first, message::kEpochFieldWidth)
-                   && writer.write(epoch.second, message::kEpochFieldWidth);
+    bool encoded = writer.write(epoch.first, sense::kEpochFieldWidth)
+                   && writer.write(epoch.second, sense::kEpochFieldWidth);
     for (std::size_t index = 0; encoded && index < count; ++index) {
         encoded = writer.write(steps[index].value, steps[index].width);
     }
@@ -95,7 +95,7 @@ bool append_command_notification(Session& session,
     const bool encoded =
         append_notification_frame(scratch,
                                   session.activity.session.sessionId,
-                                  message::kMessageType,
+                                  sense::kMessageType,
                                   std::span(scratch.responseBody).first(messageSize),
                                   key,
                                   nonce,
