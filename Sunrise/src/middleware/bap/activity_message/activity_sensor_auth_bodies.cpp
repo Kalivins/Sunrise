@@ -13,6 +13,9 @@ constexpr std::uint8_t kSlotTypeConfiguration = 8;
 constexpr std::uint8_t kSlotTypePackage = 16;
 constexpr std::uint8_t kSlotTypeQueues = 41;
 constexpr std::uint8_t kSlotTypeSpawnKeys = 67;
+/** Exit-3 targets: mounted natively, bodyless in Sunrise, filled from a settings bit-program. */
+constexpr std::uint8_t kSlotTypeScript = 18;
+constexpr std::uint8_t kSlotTypeDirector = 35;
 
 /** Body widths, each checked against the writer after the body is written. */
 constexpr std::size_t kParticipationBits = 192;
@@ -102,6 +105,31 @@ constexpr std::size_t kSpawnKeyCount = 32;
            && writer.write(0, 3);
 }
 
+/** Number of valid steps in a body program, clamped to its fixed storage. */
+[[nodiscard]] std::size_t program_count(std::uint8_t count, std::size_t capacity) noexcept {
+    return count <= capacity ? count : capacity;
+}
+
+/** Sums the widths of an auth-body bit-program. */
+[[nodiscard]] std::size_t program_bits(const BodyStep* steps, std::size_t count) noexcept {
+    std::size_t total = 0;
+    for (std::size_t index = 0; index < count; ++index) {
+        total += steps[index].width;
+    }
+    return total;
+}
+
+/** Writes an auth-body bit-program, most significant field first. */
+[[nodiscard]] bool write_program(bits::Writer& writer,
+                                 const BodyStep* steps,
+                                 std::size_t count) noexcept {
+    bool encoded = true;
+    for (std::size_t index = 0; encoded && index < count; ++index) {
+        encoded = writer.write(steps[index].value, steps[index].width);
+    }
+    return encoded;
+}
+
 /**
  * Writes the spawn-key body, which maps the 32 ordinals to themselves.
  * @param writer Body writer.
@@ -145,6 +173,17 @@ auth_body_bits(const Snapshot& snapshot, std::uint8_t slotType, bool carriesPlay
     if (slotType == kSlotTypeSquad && snapshot.squadPlaceEnabled) {
         return snapshot.squadPlaceWidth;
     }
+    // Exit-3 auth bodies. These slots are mounted natively and ship bodyless today; when enabled
+    // they carry a settings-authored bit-program. The count equals what write_auth_body emits, so
+    // the block's remainder frames it exactly.
+    if (slotType == kSlotTypeScript && snapshot.scriptBodyEnabled) {
+        return program_bits(snapshot.scriptBody.data(),
+                            program_count(snapshot.scriptBodyCount, snapshot.scriptBody.size()));
+    }
+    if (slotType == kSlotTypeDirector && snapshot.directorBodyEnabled) {
+        return program_bits(snapshot.directorBody.data(),
+                            program_count(snapshot.directorBodyCount, snapshot.directorBody.size()));
+    }
     return 0;
 }
 
@@ -175,6 +214,15 @@ bool write_auth_body(bits::Writer& writer,
         // DIAGNOSTIC: write the candidate value on the candidate width. `expected` above equals the
         // width, so the tail check still guards the position.
         encoded = writer.write(snapshot.squadPlaceValue, snapshot.squadPlaceWidth);
+    } else if (slotType == kSlotTypeScript && snapshot.scriptBodyEnabled) {
+        encoded = write_program(writer,
+                                snapshot.scriptBody.data(),
+                                program_count(snapshot.scriptBodyCount, snapshot.scriptBody.size()));
+    } else if (slotType == kSlotTypeDirector && snapshot.directorBodyEnabled) {
+        encoded =
+            write_program(writer,
+                          snapshot.directorBody.data(),
+                          program_count(snapshot.directorBodyCount, snapshot.directorBody.size()));
     }
     return encoded && writer.bit_count() == start + expected;
 }

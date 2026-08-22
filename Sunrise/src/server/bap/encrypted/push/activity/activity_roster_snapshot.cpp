@@ -341,6 +341,22 @@ RosterOutcome build_roster_snapshot(Session& session,
     snapshot.squadPlaceEnabled = defaults.squadPlaceEnabled;
     snapshot.squadPlaceWidth = defaults.squadPlaceWidth;
     snapshot.squadPlaceValue = defaults.squadPlaceValue;
+    // Exit-3 auth bodies: carry the settings bit-programs to the auth-body writer. The two step
+    // types sit on opposite sides of the layer boundary, so copy field by field.
+    snapshot.scriptBodyEnabled = defaults.scriptBodyEnabled;
+    snapshot.scriptBodyCount = defaults.scriptBodyCount;
+    snapshot.directorBodyEnabled = defaults.directorBodyEnabled;
+    snapshot.directorBodyCount = defaults.directorBodyCount;
+    for (std::size_t index = 0;
+         index < defaults.scriptBody.size() && index < snapshot.scriptBody.size(); ++index) {
+        snapshot.scriptBody[index].width = defaults.scriptBody[index].width;
+        snapshot.scriptBody[index].value = defaults.scriptBody[index].value;
+    }
+    for (std::size_t index = 0;
+         index < defaults.directorBody.size() && index < snapshot.directorBody.size(); ++index) {
+        snapshot.directorBody[index].width = defaults.directorBody[index].width;
+        snapshot.directorBody[index].value = defaults.directorBody[index].value;
+    }
     // The participation record's `+0` latches only when the region index is known.
     snapshot.region = static_cast<std::uint32_t>(region.index);
     snapshot.hasRegion = true;

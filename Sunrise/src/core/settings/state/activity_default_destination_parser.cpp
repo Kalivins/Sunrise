@@ -70,6 +70,10 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
     bool hasSquadPlaceIndex = false;
     bool hasCommandEmitEnabled = false;
     bool hasCommandBody = false;
+    bool hasScriptBodyEnabled = false;
+    bool hasScriptBody = false;
+    bool hasDirectorBodyEnabled = false;
+    bool hasDirectorBody = false;
     if (consume('}')) {
         return true;
     }
@@ -137,10 +141,30 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
             }
             hasCommandEmitEnabled = true;
         } else if (key == "command_body") {
-            if (hasCommandBody || !command_body(output)) {
+            if (hasCommandBody || !bit_program(output.commandBody, output.commandBodyCount)) {
                 return false;
             }
             hasCommandBody = true;
+        } else if (key == "script_body_enabled") {
+            if (hasScriptBodyEnabled || !boolean(output.scriptBodyEnabled)) {
+                return false;
+            }
+            hasScriptBodyEnabled = true;
+        } else if (key == "script_body") {
+            if (hasScriptBody || !bit_program(output.scriptBody, output.scriptBodyCount)) {
+                return false;
+            }
+            hasScriptBody = true;
+        } else if (key == "director_body_enabled") {
+            if (hasDirectorBodyEnabled || !boolean(output.directorBodyEnabled)) {
+                return false;
+            }
+            hasDirectorBodyEnabled = true;
+        } else if (key == "director_body") {
+            if (hasDirectorBody || !bit_program(output.directorBody, output.directorBodyCount)) {
+                return false;
+            }
+            hasDirectorBody = true;
         } else if (!skip_value(0)) {
             return false;
         }
@@ -242,9 +266,11 @@ bool Parser::default_destination(state::activity::defaults::DefaultDestination& 
     }
 }
 
-/** Fills the sense_command bit-program from [width, value] pairs. */
-bool Parser::command_body(state::activity::defaults::ActivityDefaults& output) noexcept {
-    output.commandBodyCount = 0;
+/** Fills one bit-program from [width, value] pairs into fixed step storage. */
+bool Parser::bit_program(std::array<state::activity::defaults::CommandBodyStep,
+                                    state::activity::defaults::kCommandBodyCapacity>& steps,
+                         std::uint8_t& count) noexcept {
+    count = 0;
     if (!consume('[')) {
         return false;
     }
@@ -254,9 +280,8 @@ bool Parser::command_body(state::activity::defaults::ActivityDefaults& output) n
     for (;;) {
         std::uint64_t width = 0;
         std::uint64_t value = 0;
-        if (output.commandBodyCount >= output.commandBody.size() || !consume('[')
-            || !unsigned_integer(width) || !consume(',') || !unsigned_integer(value)
-            || !consume(']') || width < 1 || width > 64) {
+        if (count >= steps.size() || !consume('[') || !unsigned_integer(width) || !consume(',')
+            || !unsigned_integer(value) || !consume(']') || width < 1 || width > 64) {
             return false;
         }
         // A value with bits above its field would silently truncate on the wire, so a program that
@@ -264,8 +289,7 @@ bool Parser::command_body(state::activity::defaults::ActivityDefaults& output) n
         if (width < 64 && value >= (static_cast<std::uint64_t>(1) << width)) {
             return false;
         }
-        state::activity::defaults::CommandBodyStep& step =
-            output.commandBody[output.commandBodyCount++];
+        state::activity::defaults::CommandBodyStep& step = steps[count++];
         step.width = static_cast<std::uint8_t>(width);
         step.value = value;
         if (consume(']')) {

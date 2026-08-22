@@ -2,6 +2,7 @@
 
 #include <Windows.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -101,12 +102,16 @@ private:
     [[nodiscard]] bool
     activity_settings(state::activity::defaults::ActivityDefaults& output) noexcept;
     /**
-     * Parses the sense_command post-epoch bit-program as an array of [width, value] pairs.
-     * @param output Receives the bit-program only after the whole array is valid.
-     * @return True when every width is 1..64 and the pairs fit the fixed step storage.
+     * Parses one bit-program (an array of [width, value] pairs) into fixed step storage.
+     * Shared by the sense_command body and the exit-3 auth bodies.
+     * @param steps Fixed step storage, filled from the array.
+     * @param count Receives the number of valid steps.
+     * @return True when every width is 1..64, each value fits its width, and the pairs fit storage.
      */
     [[nodiscard]] bool
-    command_body(state::activity::defaults::ActivityDefaults& output) noexcept;
+    bit_program(std::array<state::activity::defaults::CommandBodyStep,
+                           state::activity::defaults::kCommandBodyCapacity>& steps,
+                std::uint8_t& count) noexcept;
     /**
      * Parses one local destination and its small numeric launch policy.
      * @param output Receives the candidate only after all supported fields are valid together.

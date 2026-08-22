@@ -109,6 +109,23 @@ struct ActivityDefaults final {
     bool commandEmitEnabled{};
     std::array<CommandBodyStep, kCommandBodyCapacity> commandBody{};
     std::uint8_t commandBodyCount{};
+    /**
+     * Exit-3 auth bodies for two objects the mission mounts natively but that Sunrise leaves
+     * bodyless: the activity-script authority (slot type 18, schema 0x80809919) and the mission
+     * director (slot type 35, schema 0x808099BF), which share the validity-window block 0x808099C4.
+     * These are step-5 instruments: they measure whether the auth-body path reaches a live object,
+     * not a spawn (the director owns no spawner). Each body is a settings-authored bit-program so
+     * the exact field layout, the validity window, and the bool width can be tuned without a
+     * rebuild, and the program's self-consistent bit count can never break the roster encode. Both
+     * off by default. An all-zero window decodes to an empty validity range, so a neutral body still
+     * needs an explicit window (§29.5).
+     */
+    bool scriptBodyEnabled{};
+    std::array<CommandBodyStep, kCommandBodyCapacity> scriptBody{};
+    std::uint8_t scriptBodyCount{};
+    bool directorBodyEnabled{};
+    std::array<CommandBodyStep, kCommandBodyCapacity> directorBody{};
+    std::uint8_t directorBodyCount{};
 };
 
 } // namespace sunrise::state::activity::defaults

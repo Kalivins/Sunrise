@@ -88,6 +88,15 @@ struct Roster final {
     std::span<const BubbleSubBlock> bubbleSubBlocks{};
 };
 
+/** Maximum steps in a settings-authored auth-body bit-program. Matches the settings capacity. */
+inline constexpr std::size_t kBodyProgramCapacity = 32;
+
+/** One MSB-first field of a settings-authored auth-body bit-program. */
+struct BodyStep final {
+    std::uint8_t width{};
+    std::uint64_t value{};
+};
+
 /** Everything one `sensor_auth_update` carries. */
 struct Snapshot final {
     /** Message 52's payload, echoed exactly. A wrong epoch skips phase 2 and reports nothing. */
@@ -126,6 +135,19 @@ struct Snapshot final {
     bool squadPlaceEnabled{};
     std::uint8_t squadPlaceWidth{};
     std::uint64_t squadPlaceValue{};
+    /**
+     * Exit-3 auth bodies for the activity-script authority (slot type 18) and the mission director
+     * (slot type 35): objects the mission mounts natively but that Sunrise leaves bodyless. Each is
+     * a settings-authored bit-program so a measured field layout and validity window can be tried
+     * without a rebuild, and its self-consistent bit count keeps the per-block remainder framing
+     * exact, which confines a wrong body to its own block. Off unless enabled.
+     */
+    bool scriptBodyEnabled{};
+    std::array<BodyStep, kBodyProgramCapacity> scriptBody{};
+    std::uint8_t scriptBodyCount{};
+    bool directorBodyEnabled{};
+    std::array<BodyStep, kBodyProgramCapacity> directorBody{};
+    std::uint8_t directorBodyCount{};
 };
 
 /**
