@@ -155,19 +155,6 @@ void report_outcome(Skip skip,
         return Skip::descriptor;
     }
 
-    // DIAGNOSTIC witness (2026-08-22): prove the maximal-fill descriptor bytes are the ones
-    // actually built and shipped. le0/le1/le4 are the first byte of NetAddr local entries 0/1/4
-    // (le1 and le4 equal le0 when the replication took), key is [94], tail is [118].
-    const auto& probe = candidate.descriptor;
-    report(core::log::Level::info,
-           "ev=gameplay stage=descriptor result=built le0=0x%02X le1=0x%02X le4=0x%02X "
-           "key=0x%02X tail=0x%02X",
-           std::to_integer<unsigned>(probe[8]),
-           std::to_integer<unsigned>(probe[14]),
-           std::to_integer<unsigned>(probe[32]),
-           std::to_integer<unsigned>(probe[94]),
-           std::to_integer<unsigned>(probe[118]));
-
     candidate.onlineSessionId = host.target.sessionId;
     candidate.regionIndex = regionIndex;
     candidate.ambassadorSlot = ambassador_slot(localMemberSlot);
