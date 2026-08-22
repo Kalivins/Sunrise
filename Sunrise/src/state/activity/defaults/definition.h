@@ -79,6 +79,14 @@ struct ActivityDefaults final {
     bool squadPlaceEnabled{};
     std::uint8_t squadPlaceWidth{};
     std::uint64_t squadPlaceValue{};
+    /**
+     * DIAGNOSTIC squad.place injection. When squadPlaceEnabled is on, a synthetic top-level roster
+     * group is injected carrying one type-1 (squad) auth slot at `squadPlaceIndex`, keyed by
+     * `squadPlaceKey`, so a squad's placement slot enters the roster (it is not admitted otherwise).
+     * Defaults name Chosen's `squad_ikora` (index 91, registryKey 0xef4eaa1e). Off by default.
+     */
+    std::uint32_t squadPlaceKey{0xEF4EAA1E};
+    std::uint16_t squadPlaceIndex{91};
 };
 
 } // namespace sunrise::state::activity::defaults

@@ -66,6 +66,8 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
     bool hasSquadPlaceEnabled = false;
     bool hasSquadPlaceWidth = false;
     bool hasSquadPlaceValue = false;
+    bool hasSquadPlaceKey = false;
+    bool hasSquadPlaceIndex = false;
     if (consume('}')) {
         return true;
     }
@@ -113,6 +115,20 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
             }
             output.squadPlaceValue = value;
             hasSquadPlaceValue = true;
+        } else if (key == "squad_place_key") {
+            std::uint64_t key32 = 0;
+            if (hasSquadPlaceKey || !unsigned_integer(key32) || key32 > 0xFFFFFFFFULL) {
+                return false;
+            }
+            output.squadPlaceKey = static_cast<std::uint32_t>(key32);
+            hasSquadPlaceKey = true;
+        } else if (key == "squad_place_index") {
+            std::uint64_t index = 0;
+            if (hasSquadPlaceIndex || !unsigned_integer(index) || index > 0xFFFFULL) {
+                return false;
+            }
+            output.squadPlaceIndex = static_cast<std::uint16_t>(index);
+            hasSquadPlaceIndex = true;
         } else if (!skip_value(0)) {
             return false;
         }

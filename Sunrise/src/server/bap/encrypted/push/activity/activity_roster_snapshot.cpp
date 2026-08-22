@@ -33,6 +33,8 @@ constexpr std::uint32_t kFoldBasis = 2166136261U;
 constexpr std::uint32_t kFoldPrime = 16777619U;
 /** Only a type-13 slot binds the player, so only a group holding one may carry the key. */
 constexpr std::uint8_t kSlotTypeParticipation = 13;
+/** DIAGNOSTIC squad.place injection: a type-1 slot is the authored-squad placement slot. */
+constexpr std::uint8_t kSlotTypeSquad = 1;
 /** The join request names its character in the low half of the SOID, so compare on that half. */
 constexpr std::uint64_t kIdentityLowMask = 0xFFFFFFFFULL;
 
@@ -125,7 +127,9 @@ constexpr std::uint64_t kIdentityLowMask = 0xFFFFFFFFULL;
  * @return True when every named group was found and one of them binds the player.
  */
 [[nodiscard]] bool
-fill_roster(const layouts::Definition& layout, Scratch& scratch, message::Roster& roster) noexcept {
+fill_roster(const layouts::Definition& layout, Scratch& scratch,
+            const state::activity::defaults::ActivityDefaults& defaults,
+            message::Roster& roster) noexcept {
     roster = {};
     const std::size_t groupCount =
         std::size_t{layout.rosterGroupCount} + std::size_t{layout.bubbleGroupCount};
@@ -148,6 +152,38 @@ fill_roster(const layouts::Definition& layout, Scratch& scratch, message::Roster
     }
     roster.topLevelGroupCount = layout.rosterGroupCount;
     roster.groupCount = groupCount;
+    // DIAGNOSTIC squad.place injection: append a synthetic top-level group carrying one type-1
+    // (squad) auth slot, so a squad's placement slot enters the roster the whitelist gate does not
+    // admit on its own. Inserted after the real top-level groups; the per-bubble groups shift down
+    // by one, and every span is re-derived from scratch so none goes stale. Self-diagnosing: a
+    // rejected group stalls the keepalive revision, an accepted one raises the object count. To be
+    // removed once the mechanism is real.
+    if (defaults.squadPlaceEnabled && roster.groupCount < roster.groups.size()
+        && roster.groupCount < scratch.rosterGroups.size()) {
+        const std::size_t at = roster.topLevelGroupCount;
+        for (std::size_t index = roster.groupCount; index > at; --index) {
+            scratch.rosterGroups[index] = scratch.rosterGroups[index - 1];
+        }
+        layouts::RosterGroup& synthetic = scratch.rosterGroups[at];
+        synthetic = {};
+        synthetic.registryKey = defaults.squadPlaceKey;
+        synthetic.slotCount = 1;
+        synthetic.slotTypes[0] = kSlotTypeSquad;
+        synthetic.slotFlags[0] = message::kSlotAuthFlag;
+        synthetic.slotIndices[0] = defaults.squadPlaceIndex;
+        ++roster.topLevelGroupCount;
+        ++roster.groupCount;
+        for (std::size_t index = 0; index < roster.groupCount; ++index) {
+            const layouts::RosterGroup& group = scratch.rosterGroups[index];
+            roster.groups[index].key = group.registryKey;
+            roster.groups[index].slotTypes =
+                std::span<const std::uint8_t>(group.slotTypes.data(), group.slotCount);
+            roster.groups[index].slotFlags =
+                std::span<const std::uint8_t>(group.slotFlags.data(), group.slotCount);
+            roster.groups[index].slotIndices =
+                std::span<const std::uint16_t>(group.slotIndices.data(), group.slotCount);
+        }
+    }
     roster.bubbleSubBlocks = fill_sub_blocks(layout, scratch, roster);
     // Only a top-level group can bind the player: its object is in every slice set, so the gate
     // reads it wherever the player is.
@@ -263,7 +299,7 @@ RosterOutcome build_roster_snapshot(Session& session,
     if (!state::build_data::find_scenario_layout(name, layout)) {
         return RosterOutcome::noLayout;
     }
-    if (!fill_roster(layout, scratch, snapshot.roster)) {
+    if (!fill_roster(layout, scratch, defaults, snapshot.roster)) {
         return RosterOutcome::noGroups;
     }
 
