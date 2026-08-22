@@ -6,6 +6,7 @@
 
 #include "bubble_host.h"
 #include "core/logging/log.h"
+#include "core/settings/settings.h"
 #include "internal.h"
 
 namespace sunrise::server::gameplay::physics::host {
@@ -75,8 +76,13 @@ HostStatus BubbleHost::open_world(const WorldOpenRequest& request,
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
+    // The dev diagnostic (env var / flag file) drives the built-in wave without a real peer. The
+    // reconstruct_mission_policy setting installs the same policy on the real peer's bound world, so
+    // a joined client keeps a scripted world instead of the inert scriptless fallback.
     const bool useBlueprint =
-        policy == nullptr && (encounterTest != nullptr || encounter_test_flag());
+        policy == nullptr
+        && (encounterTest != nullptr || encounter_test_flag()
+            || core::settings::get().server.activation.reconstructMissionPolicy);
     const world::ActivityPolicyManifest selectedManifest =
         useBlueprint
             ? encounter::BlueprintActivityPolicy::manifest_for(request.scene.contentBuild)

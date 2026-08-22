@@ -53,6 +53,11 @@ bool Parser::activation_settings(server::activation::Settings& output) noexcept 
                 return false;
             }
             candidate.reconstructHostSession = value;
+        } else if (key == "reconstruct_mission_policy") {
+            if (!boolean(value)) {
+                return false;
+            }
+            candidate.reconstructMissionPolicy = value;
         } else if (!skip_value(0)) {
             return false;
         }

@@ -292,9 +292,12 @@ void close_bound(Storage& table, std::size_t slot) noexcept {
     request.scene.stableSceneId = row.hostSessionId;
     request.scene.contentBuild = kSceneContentBuild;
     request.scene.bubble = static_cast<std::uint32_t>(row.regionIndex);
-    // The bounds stay the zero box, which the backend accepts. TODO: no body is placed yet, and
-    // the first one will be refused for falling outside it. Take the real extents from the
-    // destination's scenario layout when an actor carries a transform.
+    // A wide provisional box, matching the force-open path, so the mission policy's trigger and
+    // static bodies are accepted; the zero box refuses the first body and the tick goes unhealthy.
+    // TODO: take the real extents from the destination's scenario layout when an actor carries a
+    // transform.
+    request.scene.bounds.minimum = {-5000.0F, -5000.0F, -5000.0F};
+    request.scene.bounds.maximum = {5000.0F, 5000.0F, 5000.0F};
     request.logicalWorldId = row.hostSessionId;
     request.activitySessionId = row.hostSessionId;
     request.ownerEpoch = row.generation;
@@ -321,14 +324,26 @@ void close_bound(Storage& table, std::size_t slot) noexcept {
     peerRequest.replica = entry.replicaHandle;
     const HostStatus bound = host->bind_peer(entry.world, peerRequest, entry.peer);
     PeerServiceAccess services{};
-    const bool registered =
-        bound == HostStatus::success
-        && host->peer_services(entry.world, entry.peer, services) == HostStatus::success
-        && services.replication != nullptr
+    // The five post-bind terms are evaluated stepwise so the witness can name the first to fail,
+    // instead of collapsing bind / services / replication / coordinator into one "reason=peer".
+    const HostStatus servicesStatus = bound == HostStatus::success
+                                          ? host->peer_services(entry.world, entry.peer, services)
+                                          : HostStatus::staleHandle;
+    const bool hasReplication =
+        servicesStatus == HostStatus::success && services.replication != nullptr;
+    const bool coordinatorBound =
+        hasReplication
         && table.coordinators[slot].bind(
-            {row.hostSessionId, entry.world.generation, row.generation}, entry.context)
+            {row.hostSessionId, entry.world.generation, row.generation}, entry.context);
+    const bool registered =
+        coordinatorBound
         && table.coordinators[slot].register_peer(*services.replication, peerRequest.interest);
     if (!registered) {
+        const char* const step = bound != HostStatus::success          ? "bind_peer"
+                                 : servicesStatus != HostStatus::success ? "peer_services"
+                                 : services.replication == nullptr       ? "no_replication"
+                                 : !coordinatorBound                     ? "coordinator_bind"
+                                                                         : "register_peer";
         if (bound == HostStatus::success) {
             static_cast<void>(host->unbind_peer(entry.world, entry.peer));
         }
@@ -336,9 +351,12 @@ void close_bound(Storage& table, std::size_t slot) noexcept {
         static_cast<void>(replica::retire_peer_replica(entry.replicaHandle));
         static_cast<void>(replica::reset_context(entry.context));
         report(core::log::Level::warn,
-               "ev=physics stage=world result=fail session=0x%016llX bind=%u reason=peer",
+               "ev=physics stage=world result=fail session=0x%016llX bind=%u services=%u reason=peer "
+               "step=%s",
                static_cast<unsigned long long>(admitted.sessionId),
-               static_cast<unsigned>(bound));
+               static_cast<unsigned>(bound),
+               static_cast<unsigned>(servicesStatus),
+               step);
         return false;
     }
 
@@ -551,7 +569,18 @@ void run_pass(std::uint64_t now, bool reconcile) noexcept {
         // though the group session id has not changed.
         const bool current = row != nullptr && row->generation == entry.hostGeneration
                              && row->hostSessionId == entry.activitySessionId;
-        if (!current || !still_joined(admitted, admittedCount, entry.groupSessionId)) {
+        const bool joined = still_joined(admitted, admittedCount, entry.groupSessionId);
+        if (!current || !joined) {
+            // Witness: name why a bound world is reaped so a same-tick open/close is diagnosable.
+            report(core::log::Level::warn,
+                   "ev=physics stage=world result=reap session=0x%016llX reason=%s row_found=%d "
+                   "gen_row=%llu gen_entry=%llu joined=%d",
+                   static_cast<unsigned long long>(entry.groupSessionId),
+                   !current ? "not_current" : "not_joined",
+                   row != nullptr ? 1 : 0,
+                   static_cast<unsigned long long>(row != nullptr ? row->generation : 0),
+                   static_cast<unsigned long long>(entry.hostGeneration),
+                   joined ? 1 : 0);
             const std::uint64_t closed = entry.groupSessionId;
             close_bound(*table, slot);
             clear_attempt(*table, closed);

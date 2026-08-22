@@ -49,6 +49,13 @@ struct Settings {
      * destination so a synthetic join can bind. Off by default, and needs an active override.
      */
     bool reconstructHostSession{false};
+    /**
+     * Installs the blueprint mission policy on the real peer's bound world instead of the inert
+     * scriptless fallback, so the world stays scripted and its phases tick. Off by default. The
+     * spawns are logical until a combatant carries a bound profile, so this does not yet make a
+     * visible enemy; it keeps the world driven so a peer can bind and hold.
+     */
+    bool reconstructMissionPolicy{false};
 };
 
 } // namespace sunrise::core::settings::server::activation
