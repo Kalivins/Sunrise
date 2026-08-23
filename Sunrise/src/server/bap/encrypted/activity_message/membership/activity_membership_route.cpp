@@ -121,8 +121,35 @@ bool prepare_identity(const service::Request& request, ActivityPlan& plan) noexc
 bool prepare_authoritative(const service::Request& request, ActivityPlan& plan) noexcept {
     service::client_authoritative_data::ClientAuthoritativeData parsed{};
     if (!service::client_authoritative_data::parse_client_authoritative_data(request.payload,
-                                                                             parsed)
-        || !membership_state::prepare_authoritative(
+                                                                             parsed)) {
+        return false;
+    }
+    // WITNESS (diagnostic, blocage 4): what the client's C0 authoritative delta actually reports.
+    // spawn_state and region stay 0 the whole run; this settles whether the client never sends a
+    // positive spawn/region, or the server drops it before the mirror. Removed after.
+    {
+        std::array<char, core::log::kLineCapacity> c0Line{};
+        const int c0Len = std::snprintf(
+            c0Line.data(),
+            c0Line.size(),
+            "ev=activity stage=c0 hasSpawn=%d spawn=%d hasRegion=%d region=%d hash=0x%08X "
+            "hasTeleport=%d teleport=%d hasToken=%d token=%llu",
+            parsed.hasSpawn ? 1 : 0,
+            static_cast<int>(parsed.spawn.state),
+            parsed.hasRegion ? 1 : 0,
+            static_cast<int>(parsed.region.index),
+            parsed.region.hash,
+            parsed.hasTeleport ? 1 : 0,
+            static_cast<int>(parsed.teleport.state),
+            parsed.hasTransitionToken ? 1 : 0,
+            static_cast<unsigned long long>(parsed.transitionToken));
+        if (c0Len > 0) {
+            core::log::write(core::log::Channel::server,
+                             core::log::Level::info,
+                             {c0Line.data(), static_cast<std::size_t>(c0Len)});
+        }
+    }
+    if (!membership_state::prepare_authoritative(
             request.accountHandle, make_authoritative(parsed), plan.membershipMutation)) {
         return false;
     }
