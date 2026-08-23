@@ -150,47 +150,38 @@ fill_roster(const layouts::Definition& layout, Scratch& scratch,
     }
     roster.topLevelGroupCount = layout.rosterGroupCount;
     roster.groupCount = groupCount;
-    // DIAGNOSTIC squad.place injection: append the REAL extracted group for the squad-parent key as
-    // a top-level group, so a squad-spawner object (the type-1 slots) enters mission_reunion's roster
-    // the whitelist gate does not admit into it on its own. The earlier one-slot fabrication held the
-    // client apply: the client seeds by key against its own content (0xEF4EAA1E carries 30/43 slots),
-    // so a one-slot group never matched its structure. Referencing the real global-table group
-    // publishes the slot set the client expects. Inserted after the real top-level groups; per-bubble
-    // groups shift down by one, spans re-derived. Self-diagnosing: a held apply stalls the keepalive
-    // revision, an accepted one raises the object count. To be removed once the mechanism is real.
+    // DIAGNOSTIC squad.place injection (RUNTIME SEED TEST): synthesize a one-slot type-1 squad group
+    // keyed by squadPlaceKey. The earlier attempt held at the entry region (region 0), where the
+    // combat bubble content is not loaded, so the client cannot seed the squad object. This tests the
+    // runtime-seed insight: whether the SAME injected slot SEEDS once the player is in the combat
+    // region (region 8), where the client has loaded and registered the squad object from its own
+    // content. No auth body yet (squad_place_width 0): this isolates the seed from the body. The
+    // roster log line carries the region, so a seed at region 8 vs the region-0 hold is readable.
+    // Self-diagnosing: objects rises on inject; keepalive revision stalls on hold, advances on seed.
     if (defaults.squadPlaceEnabled && roster.groupCount < roster.groups.size()
         && roster.groupCount < scratch.rosterGroups.size()) {
-        layouts::RosterGroup real{};
-        bool found = false;
-        for (std::size_t table = 0; table < layouts::kRosterGroupCapacity; ++table) {
-            layouts::RosterGroup candidate{};
-            if (!state::build_data::find_roster_group(table, candidate)) {
-                break;
-            }
-            if (candidate.registryKey == defaults.squadPlaceKey && candidate.slotCount != 0) {
-                real = candidate;
-                found = true;
-                break;
-            }
+        const std::size_t at = roster.topLevelGroupCount;
+        for (std::size_t index = roster.groupCount; index > at; --index) {
+            scratch.rosterGroups[index] = scratch.rosterGroups[index - 1];
         }
-        if (found) {
-            const std::size_t at = roster.topLevelGroupCount;
-            for (std::size_t index = roster.groupCount; index > at; --index) {
-                scratch.rosterGroups[index] = scratch.rosterGroups[index - 1];
-            }
-            scratch.rosterGroups[at] = real;
-            ++roster.topLevelGroupCount;
-            ++roster.groupCount;
-            for (std::size_t index = 0; index < roster.groupCount; ++index) {
-                const layouts::RosterGroup& group = scratch.rosterGroups[index];
-                roster.groups[index].key = group.registryKey;
-                roster.groups[index].slotTypes =
-                    std::span<const std::uint8_t>(group.slotTypes.data(), group.slotCount);
-                roster.groups[index].slotFlags =
-                    std::span<const std::uint8_t>(group.slotFlags.data(), group.slotCount);
-                roster.groups[index].slotIndices =
-                    std::span<const std::uint16_t>(group.slotIndices.data(), group.slotCount);
-            }
+        layouts::RosterGroup& synthetic = scratch.rosterGroups[at];
+        synthetic = {};
+        synthetic.registryKey = defaults.squadPlaceKey;
+        synthetic.slotCount = 1;
+        synthetic.slotTypes[0] = 1;
+        synthetic.slotFlags[0] = message::kSlotAuthFlag;
+        synthetic.slotIndices[0] = defaults.squadPlaceIndex;
+        ++roster.topLevelGroupCount;
+        ++roster.groupCount;
+        for (std::size_t index = 0; index < roster.groupCount; ++index) {
+            const layouts::RosterGroup& group = scratch.rosterGroups[index];
+            roster.groups[index].key = group.registryKey;
+            roster.groups[index].slotTypes =
+                std::span<const std::uint8_t>(group.slotTypes.data(), group.slotCount);
+            roster.groups[index].slotFlags =
+                std::span<const std::uint8_t>(group.slotFlags.data(), group.slotCount);
+            roster.groups[index].slotIndices =
+                std::span<const std::uint16_t>(group.slotIndices.data(), group.slotCount);
         }
     }
     roster.bubbleSubBlocks = fill_sub_blocks(layout, scratch, roster);
