@@ -164,7 +164,7 @@ bool resolve_object(const reader::Source& source,
     // whether Chosen's sensors have a valid key or hit the placement key=0 wall. Removed after.
     {
         std::uint32_t witnessKey = 0;
-        tables::object_key(storage.object, witnessKey);
+        static_cast<void>(tables::object_key(storage.object, witnessKey));
         tables::Array witnessSlots{};
         bool hasSensor = false;
         if (tables::object_slots(storage.object, witnessSlots)) {
