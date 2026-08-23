@@ -58,6 +58,9 @@ struct RosterStorage {
     std::size_t cursor{};
     /** Tag reads spent in the current call, which is what bounds how long it blocks. */
     std::size_t reads{};
+    /** DIAGNOSTIC (blocage 4): handles followed and read_tag failures for the object being resolved. */
+    std::size_t handleTotal{};
+    std::size_t handleFails{};
 };
 
 /** Tag-read budget bounds one process-freeze interval and keeps worker shutdown responsive. */

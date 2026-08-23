@@ -83,10 +83,12 @@ void follow_handle(const reader::Source& source,
                    std::uint32_t handle,
                    std::uint32_t registryKey) noexcept {
     std::uint32_t tag = handle;
+    ++storage.handleTotal;
     for (std::size_t depth = 0; depth < kChainDepthLimit; ++depth) {
         std::uint32_t classId = 0;
         ++storage.reads;
         if (!reader::read_tag(source, scratch, tag, storage.chain, classId)) {
+            ++storage.handleFails;
             return;
         }
         if (classId == tables::kPlacedObjectClass) {
@@ -239,6 +241,8 @@ bool resolve_object(const reader::Source& source,
     }
     storage.slotCount = 0;
     storage.slotsOverflowed = false;
+    storage.handleTotal = 0;
+    storage.handleFails = 0;
     collect_descriptors(source, scratch, storage, storage.object, candidate.registryKey);
     if (!fill_slots(storage, declared.count, candidate)) {
         // The client registers a record per slot the object declares and refuses its whole apply
@@ -252,10 +256,13 @@ bool resolve_object(const reader::Source& source,
             const int dropLen = std::snprintf(
                 dropLine.data(),
                 dropLine.size(),
-                "ev=build_data stage=squad_resolve key=0x%08X result=drop declared=%llu collected=%u",
+                "ev=build_data stage=squad_resolve key=0x%08X result=drop declared=%llu collected=%u "
+                "handles=%u handleFails=%u",
                 candidate.registryKey,
                 static_cast<unsigned long long>(declared.count),
-                static_cast<unsigned>(storage.slotCount));
+                static_cast<unsigned>(storage.slotCount),
+                static_cast<unsigned>(storage.handleTotal),
+                static_cast<unsigned>(storage.handleFails));
             if (dropLen > 0) {
                 core::log::write(core::log::Channel::state,
                                  core::log::Level::warn,
@@ -270,10 +277,13 @@ bool resolve_object(const reader::Source& source,
         const int okLen = std::snprintf(
             okLine.data(),
             okLine.size(),
-            "ev=build_data stage=squad_resolve key=0x%08X result=ok declared=%llu slots=%u",
+            "ev=build_data stage=squad_resolve key=0x%08X result=ok declared=%llu slots=%u "
+            "handles=%u handleFails=%u",
             candidate.registryKey,
             static_cast<unsigned long long>(declared.count),
-            static_cast<unsigned>(candidate.slotCount));
+            static_cast<unsigned>(candidate.slotCount),
+            static_cast<unsigned>(storage.handleTotal),
+            static_cast<unsigned>(storage.handleFails));
         if (okLen > 0) {
             core::log::write(core::log::Channel::state,
                              core::log::Level::warn,
