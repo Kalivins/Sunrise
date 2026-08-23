@@ -1,3 +1,6 @@
+#include <array>
+#include <cstdint>
+
 #include "../../../middleware/content/packages/tables/roster_intersection.h"
 #include "../../../middleware/content/packages/tables/scenario_reader.h"
 #include "../../../middleware/content/packages/tables/slot_descriptor_reader.h"
@@ -10,6 +13,28 @@ namespace tables = middleware::content::packages::tables;
 
 /** How many hops the chain from a handle to a descriptor blob may take. */
 constexpr std::size_t kChainDepthLimit = 8;
+
+/**
+ * SCOPED SENSOR PROBE (diagnostic). Chosen's sensor/squad objects (type-30 slots) that the roster
+ * whitelist does not admit on its own. Admitting them by exact registry key keeps the extraction
+ * cheap -- a global type-30 widen resolves ~1806 objects and hangs the cache rebuild -- while
+ * getting Chosen's sensors into the published roster, to test whether a mounted sensor births a
+ * client sense_update. Keys measured from last_city_liberation's scenario walk. To be removed.
+ */
+constexpr std::array<std::uint32_t, 18> kScopedSensorKeys = {
+    0x030d2bcaU, 0x0c416ebfU, 0x169e2d77U, 0x2e65274eU, 0x8ad2b200U, 0x8ad2b203U,
+    0x8c040d5dU, 0xa3f4edb4U, 0xb2660a00U, 0xb7f41096U, 0xbca1e578U, 0xc8e4ce0cU,
+    0xddd553b3U, 0xe3797278U, 0xe8aef4cdU, 0xeb3c061aU, 0xef4eaa1eU, 0xf3a33d80U};
+
+/** True when a registry key is one of the scoped sensor objects to admit past the whitelist. */
+[[nodiscard]] bool is_scoped_sensor(std::uint32_t registryKey) noexcept {
+    for (const std::uint32_t key : kScopedSensorKeys) {
+        if (key == registryKey) {
+            return true;
+        }
+    }
+    return false;
+}
 
 /**
  * Records one descriptor as a slot of the object being resolved.
@@ -136,7 +161,8 @@ bool resolve_object(const reader::Source& source,
     layouts::RosterGroup candidate{};
     tables::Array declared{};
     if (!tables::object_key(storage.object, candidate.registryKey) || candidate.registryKey == 0
-        || !tables::carries_roster_slot(storage.object)
+        || (!tables::carries_roster_slot(storage.object)
+            && !is_scoped_sensor(candidate.registryKey))
         || !tables::object_slots(storage.object, declared) || declared.count == 0
         || declared.count > layouts::kRosterSlotCapacity) {
         return true;

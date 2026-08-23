@@ -56,8 +56,8 @@ void observe_unresolved_slice_set(RosterIntersection& state) noexcept;
  * Only 56 installed objects declare any of them, and the key limit above holds only for that
  * filtered set. Feeding every placed object instead overflows most destinations.
  */
-inline constexpr std::array<std::uint16_t, 10> kRosterSlotTypes = {
-    8, 13, 16, 17, 21, 30, 35, 37, 41, 67};
+inline constexpr std::array<std::uint16_t, 9> kRosterSlotTypes = {
+    8, 13, 16, 17, 21, 35, 37, 41, 67};
 
 /**
  * Tests whether one placed object is a roster candidate.
