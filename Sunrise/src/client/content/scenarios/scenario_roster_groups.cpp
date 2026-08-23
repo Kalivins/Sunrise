@@ -160,31 +160,42 @@ bool resolve_object(const reader::Source& source,
         return true;
     }
 
-    // WITNESS (diagnostic): the runtime object_key of any object carrying a type-30 slot, to settle
-    // whether Chosen's sensors have a valid key or hit the placement key=0 wall. Removed after.
+    // WITNESS (diagnostic): locate the objects that carry a squad slot (type 1) or a sensor slot
+    // (type 30), and report each one's runtime object_key plus whether the whitelist already admits
+    // it. squad.place needs a type-1 slot published against an object the client can SEED; the seed
+    // key is the carrying object's registry key. This settles whether any type-1-bearing object has
+    // a non-zero, admitted key (seedable today) or every one hits the placement key=0 wall (needs
+    // the registry-element key instead). Removed after.
     {
         std::uint32_t witnessKey = 0;
         static_cast<void>(tables::object_key(storage.object, witnessKey));
         tables::Array witnessSlots{};
-        bool hasSensor = false;
+        unsigned squadSlots = 0;
+        unsigned sensorSlots = 0;
         if (tables::object_slots(storage.object, witnessSlots)) {
-            for (std::uint64_t s = 0; s < witnessSlots.count && !hasSensor; ++s) {
+            for (std::uint64_t s = 0; s < witnessSlots.count; ++s) {
                 tables::Slot descriptor{};
-                if (tables::object_slot_at(storage.object, witnessSlots, s, descriptor)
-                    && descriptor.type == 30) {
-                    hasSensor = true;
+                if (!tables::object_slot_at(storage.object, witnessSlots, s, descriptor)) {
+                    continue;
+                }
+                if (descriptor.type == 1) {
+                    ++squadSlots;
+                } else if (descriptor.type == 30) {
+                    ++sensorSlots;
                 }
             }
         }
-        if (hasSensor) {
+        if (squadSlots != 0 || sensorSlots != 0) {
             std::array<char, core::log::kLineCapacity> witnessLine{};
-            const int witnessLen =
-                std::snprintf(witnessLine.data(),
-                              witnessLine.size(),
-                              "ev=build_data stage=sensor_key tag=0x%08X key=0x%08X scoped=%d",
-                              objectTag,
-                              witnessKey,
-                              is_scoped_sensor(witnessKey) ? 1 : 0);
+            const int witnessLen = std::snprintf(
+                witnessLine.data(),
+                witnessLine.size(),
+                "ev=build_data stage=squad_key tag=0x%08X key=0x%08X squad=%u sensor=%u admit=%d",
+                objectTag,
+                witnessKey,
+                squadSlots,
+                sensorSlots,
+                tables::carries_roster_slot(storage.object) ? 1 : 0);
             if (witnessLen > 0) {
                 core::log::write(core::log::Channel::state,
                                  core::log::Level::warn,
