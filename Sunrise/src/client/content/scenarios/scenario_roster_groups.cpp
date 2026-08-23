@@ -309,13 +309,13 @@ bool resolve_object(const reader::Source& source,
         // a squad come in a later step; here the goal is only that the parent seeds without a hold.
         built = declared.count > 0 && declared.count <= layouts::kRosterSlotCapacity;
         for (std::uint64_t index = 0; built && index < declared.count; ++index) {
-            tables::Slot slot{};
-            if (!tables::object_slot_at(storage.object, declared, index, slot) || slot.type == 0
-                || slot.type > layouts::kMaximumSlotType) {
+            tables::Slot declaredSlot{};
+            if (!tables::object_slot_at(storage.object, declared, index, declaredSlot)
+                || declaredSlot.type == 0 || declaredSlot.type > layouts::kMaximumSlotType) {
                 built = false;
                 break;
             }
-            candidate.slotTypes[index] = static_cast<std::uint8_t>(slot.type);
+            candidate.slotTypes[index] = static_cast<std::uint8_t>(declaredSlot.type);
             candidate.slotFlags[index] = 0;
             candidate.slotIndices[index] = static_cast<std::uint16_t>(index);
         }
