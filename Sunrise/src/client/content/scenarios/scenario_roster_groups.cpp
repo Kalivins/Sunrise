@@ -244,6 +244,60 @@ bool resolve_object(const reader::Source& source,
     storage.handleTotal = 0;
     storage.handleFails = 0;
     collect_descriptors(source, scratch, storage, storage.object, candidate.registryKey);
+
+    // DIRECTOR M0 WITNESS (diagnostic). The make-or-break for building the full group from the
+    // declaration is whether a static descriptor's slotIndex equals its position in the object's
+    // declared slot array (object_slots). If it does, the ~125 script-placed slots that have no
+    // descriptor simply occupy the declaration positions no descriptor covers, and the full group is
+    // publishable as declaration order. Compare the descriptors we DID collect against the
+    // declaration at their own slotIndex, and count the declaration positions no descriptor covers.
+    if (is_scoped_squad(candidate.registryKey)) {
+        std::array<bool, layouts::kRosterSlotCapacity> covered{};
+        unsigned inRange = 0;
+        unsigned typeMatch = 0;
+        std::uint16_t idxMin = 0xFFFFU;
+        std::uint16_t idxMax = 0;
+        for (std::size_t s = 0; s < storage.slotCount; ++s) {
+            const std::uint16_t di = storage.slots[s].index;
+            idxMin = di < idxMin ? di : idxMin;
+            idxMax = di > idxMax ? di : idxMax;
+            if (di < declared.count) {
+                ++inRange;
+                covered[di] = true;
+                tables::Slot decl{};
+                if (tables::object_slot_at(storage.object, declared, di, decl)
+                    && static_cast<std::uint8_t>(decl.type) == storage.slots[s].type) {
+                    ++typeMatch;
+                }
+            }
+        }
+        unsigned gaps = 0;
+        for (std::uint64_t d = 0; d < declared.count; ++d) {
+            if (!covered[d]) {
+                ++gaps;
+            }
+        }
+        std::array<char, core::log::kLineCapacity> idxLine{};
+        const int idxLen = std::snprintf(
+            idxLine.data(),
+            idxLine.size(),
+            "ev=build_data stage=squad_index key=0x%08X declared=%llu collected=%u inRange=%u "
+            "typeMatch=%u gaps=%u idxMin=%u idxMax=%u",
+            candidate.registryKey,
+            static_cast<unsigned long long>(declared.count),
+            static_cast<unsigned>(storage.slotCount),
+            inRange,
+            typeMatch,
+            gaps,
+            static_cast<unsigned>(idxMin),
+            static_cast<unsigned>(idxMax));
+        if (idxLen > 0) {
+            core::log::write(core::log::Channel::state,
+                             core::log::Level::warn,
+                             {idxLine.data(), static_cast<std::size_t>(idxLen)});
+        }
+    }
+
     if (!fill_slots(storage, declared.count, candidate)) {
         // The client registers a record per slot the object declares and refuses its whole apply
         // while any record in the current bubble is unseeded, so a group missing one descriptor is
