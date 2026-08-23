@@ -244,8 +244,41 @@ bool resolve_object(const reader::Source& source,
         // The client registers a record per slot the object declares and refuses its whole apply
         // while any record in the current bubble is unseeded, so a group missing one descriptor is
         // dropped rather than published short.
+        // WITNESS (diagnostic): whether the scoped squad-parent group survives extraction. A drop
+        // here (its slot descriptors do not all resolve from this scenario walk) means it never
+        // reaches the published table, so the snapshot injection finds nothing to reference.
+        if (is_scoped_squad(candidate.registryKey)) {
+            std::array<char, core::log::kLineCapacity> dropLine{};
+            const int dropLen = std::snprintf(
+                dropLine.data(),
+                dropLine.size(),
+                "ev=build_data stage=squad_resolve key=0x%08X result=drop declared=%llu collected=%u",
+                candidate.registryKey,
+                static_cast<unsigned long long>(declared.count),
+                static_cast<unsigned>(storage.slotCount));
+            if (dropLen > 0) {
+                core::log::write(core::log::Channel::state,
+                                 core::log::Level::warn,
+                                 {dropLine.data(), static_cast<std::size_t>(dropLen)});
+            }
+        }
         ++storage.unresolvedGroups;
         return true;
+    }
+    if (is_scoped_squad(candidate.registryKey)) {
+        std::array<char, core::log::kLineCapacity> okLine{};
+        const int okLen = std::snprintf(
+            okLine.data(),
+            okLine.size(),
+            "ev=build_data stage=squad_resolve key=0x%08X result=ok declared=%llu slots=%u",
+            candidate.registryKey,
+            static_cast<unsigned long long>(declared.count),
+            static_cast<unsigned>(candidate.slotCount));
+        if (okLen > 0) {
+            core::log::write(core::log::Channel::state,
+                             core::log::Level::warn,
+                             {okLine.data(), static_cast<std::size_t>(okLen)});
+        }
     }
     candidate.objectTag = objectTag;
     // One key may carry different layouts in different activities, so only exact layouts reuse.
