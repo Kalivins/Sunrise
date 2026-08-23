@@ -399,6 +399,15 @@ publish_scenario_layouts(std::span<const scenarios::Definition> definitions,
  */
 [[nodiscard]] bool find_roster_group(std::size_t index, scenarios::RosterGroup& group) noexcept;
 
+/**
+ * Copies the first roster group whose registry key matches, scanning the whole table.
+ * @param registryKey Registry key to find.
+ * @param group Receives the group.
+ * @return True when the domain is ready and a group with that key exists.
+ */
+[[nodiscard]] bool find_roster_group_by_key(std::uint32_t registryKey,
+                                            scenarios::RosterGroup& group) noexcept;
+
 /** @return Number of published destination layouts, read under the lock. */
 [[nodiscard]] std::size_t scenario_layout_count() noexcept;
 

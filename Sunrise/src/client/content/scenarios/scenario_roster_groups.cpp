@@ -298,7 +298,34 @@ bool resolve_object(const reader::Source& source,
         }
     }
 
-    if (!fill_slots(storage, declared.count, candidate)) {
+    bool built = false;
+    if (is_scoped_squad(candidate.registryKey)) {
+        // DIRECTOR M0: build the FULL group from the object's declaration (object_slots), not from the
+        // static descriptors. The squad_index witness confirmed a descriptor's slotIndex is its
+        // declaration position (typeMatch == inRange, idx range 0..declared-1), so the ~97 script-placed
+        // slots that carry no static descriptor occupy exactly the declaration positions no descriptor
+        // covers. Publishing every declared slot keyed by its position seeds the whole object, which is
+        // what stops the bubble from holding. Seed-only (flags 0): auth bodies that actually instantiate
+        // a squad come in a later step; here the goal is only that the parent seeds without a hold.
+        built = declared.count > 0 && declared.count <= layouts::kRosterSlotCapacity;
+        for (std::uint64_t index = 0; built && index < declared.count; ++index) {
+            tables::Slot slot{};
+            if (!tables::object_slot_at(storage.object, declared, index, slot) || slot.type == 0
+                || slot.type > layouts::kMaximumSlotType) {
+                built = false;
+                break;
+            }
+            candidate.slotTypes[index] = static_cast<std::uint8_t>(slot.type);
+            candidate.slotFlags[index] = 0;
+            candidate.slotIndices[index] = static_cast<std::uint16_t>(index);
+        }
+        if (built) {
+            candidate.slotCount = static_cast<std::uint16_t>(declared.count);
+        }
+    } else {
+        built = fill_slots(storage, declared.count, candidate);
+    }
+    if (!built) {
         // The client registers a record per slot the object declares and refuses its whole apply
         // while any record in the current bubble is unseeded, so a group missing one descriptor is
         // dropped rather than published short.

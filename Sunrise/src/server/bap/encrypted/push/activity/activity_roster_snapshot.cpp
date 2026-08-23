@@ -151,29 +151,33 @@ fill_roster(const layouts::Definition& layout, Scratch& scratch,
     }
     roster.topLevelGroupCount = layout.rosterGroupCount;
     roster.groupCount = groupCount;
-    // DIAGNOSTIC squad.place injection (RUNTIME SEED TEST): synthesize a one-slot type-1 squad group
-    // keyed by squadPlaceKey. The roster's `region` field is NOT the player's spatial progression:
-    // a whole mission playthrough reports region 0, with a brief non-zero flicker only during the
-    // initial activity load, so an earlier `region != 0` gate never fired during play. Gate instead
-    // on the tunable squadPlaceRegion (default -1 = every region, so it fires at the region 0 the
-    // player actually plays in). No auth body isolates the seed from the body. The roster log line
-    // carries the region; objects rises on inject; keepalive revision stalls on hold, advances on
-    // seed, so a seed vs a hold is readable per region.
+    // DIRECTOR M0 injection: publish the squad-parent object's FULL declared slot group so the client
+    // seeds it instead of holding the bubble. The client registers one record per slot the object
+    // declares (298 for squadPlaceKey) and holds its whole apply until every record seeds; a record
+    // seeds only when the slot is published. Scenario extraction now builds this full group from the
+    // object's declaration, so look it up by key and add it here, because the natural destination
+    // roster does not carry this object. Gate on the tunable squadPlaceRegion (default -1 = every
+    // region; the roster region is not spatial progression, so a whole playthrough reports region 0).
+    // Skip when the destination already publishes the key so the group is never added twice.
     const bool regionMatches =
         defaults.squadPlaceRegion < 0 || region == defaults.squadPlaceRegion;
-    if (defaults.squadPlaceEnabled && regionMatches && roster.groupCount < roster.groups.size()
-        && roster.groupCount < scratch.rosterGroups.size()) {
+    bool alreadyPublished = false;
+    for (std::size_t index = 0; index < roster.groupCount; ++index) {
+        if (scratch.rosterGroups[index].registryKey == defaults.squadPlaceKey) {
+            alreadyPublished = true;
+            break;
+        }
+    }
+    layouts::RosterGroup fullGroup{};
+    if (defaults.squadPlaceEnabled && regionMatches && !alreadyPublished
+        && roster.groupCount < roster.groups.size() && roster.groupCount < scratch.rosterGroups.size()
+        && state::build_data::find_roster_group_by_key(defaults.squadPlaceKey, fullGroup)
+        && fullGroup.slotCount > 0) {
         const std::size_t at = roster.topLevelGroupCount;
         for (std::size_t index = roster.groupCount; index > at; --index) {
             scratch.rosterGroups[index] = scratch.rosterGroups[index - 1];
         }
-        layouts::RosterGroup& synthetic = scratch.rosterGroups[at];
-        synthetic = {};
-        synthetic.registryKey = defaults.squadPlaceKey;
-        synthetic.slotCount = 1;
-        synthetic.slotTypes[0] = 1;
-        synthetic.slotFlags[0] = message::kSlotAuthFlag;
-        synthetic.slotIndices[0] = defaults.squadPlaceIndex;
+        scratch.rosterGroups[at] = fullGroup;
         ++roster.topLevelGroupCount;
         ++roster.groupCount;
         for (std::size_t index = 0; index < roster.groupCount; ++index) {
