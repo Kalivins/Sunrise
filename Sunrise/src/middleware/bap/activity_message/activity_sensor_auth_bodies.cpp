@@ -43,6 +43,8 @@ constexpr std::uint8_t kSpawnOverrideIndexWidth = 10;
 constexpr std::uint32_t kSpawnOverrideIndexBias = 1;
 /** Type 67 maps the 32 spawn-key ordinals to themselves, matching its constructor. */
 constexpr std::size_t kSpawnKeyCount = 32;
+/** Type 1 (squad) minimal 0x80807ec9 body: 18 absent optionals + a 2-bit + a 3-bit field + 1 more. */
+constexpr std::size_t kSquadBodyBits = 18 + 2 + 3 + 1;
 
 /**
  * Writes the participation body, which binds the player and latches the region. Zero-fill is not
@@ -168,10 +170,11 @@ auth_body_bits(const Snapshot& snapshot, std::uint8_t slotType, bool carriesPlay
     if (slotType == kSlotTypeSpawnKeys) {
         return kSpawnKeyBits;
     }
-    // DIAGNOSTIC squad.place width search: a type-1 (squad) slot ships seed-only today; when the
-    // probe is enabled it carries the candidate width so a wrong width desyncs phase 2 as a witness.
+    // squad.place body: the type-1 slot's authSchema 0x80807ec9, RE'd by emulating the schema
+    // deserializer 0x4c74b0. The minimal form (all optionals absent) is 24 bits: 18 presence bits,
+    // a 2-bit and a 3-bit fixed field, then one presence bit.
     if (slotType == kSlotTypeSquad && snapshot.squadPlaceEnabled) {
-        return snapshot.squadPlaceWidth;
+        return kSquadBodyBits;
     }
     // Exit-3 auth bodies. These slots are mounted natively and ship bodyless today; when enabled
     // they carry a settings-authored bit-program. The count equals what write_auth_body emits, so
@@ -211,9 +214,17 @@ bool write_auth_body(bits::Writer& writer,
     } else if (slotType == kSlotTypeSpawnKeys) {
         encoded = write_spawn_keys(writer);
     } else if (slotType == kSlotTypeSquad && snapshot.squadPlaceEnabled) {
-        // DIAGNOSTIC: write the candidate value on the candidate width. `expected` above equals the
-        // width, so the tail check still guards the position.
-        encoded = writer.write(snapshot.squadPlaceValue, snapshot.squadPlaceWidth);
+        // Minimal 0x80807ec9 body (24 bits): 18 absent optionals, a 2-bit and a 3-bit fixed field,
+        // then one absent optional. The two fixed fields are tunable via squadPlaceValue (low 2 bits
+        // -> field 18, next 3 bits -> field 19) to probe the "authored default" placement, where the
+        // client places the squad from its own authored content. Anchor/ref optionals come after this
+        // validates that the client accepts a body on the seeded slot without desync.
+        for (std::size_t index = 0; encoded && index < 18; ++index) {
+            encoded = writer.write(0, kPresenceWidth);
+        }
+        encoded = encoded && writer.write(snapshot.squadPlaceValue & 0x3U, 2)
+                  && writer.write((snapshot.squadPlaceValue >> 2) & 0x7U, 3)
+                  && writer.write(0, kPresenceWidth);
     } else if (slotType == kSlotTypeScript && snapshot.scriptBodyEnabled) {
         encoded = write_program(writer,
                                 snapshot.scriptBody.data(),
