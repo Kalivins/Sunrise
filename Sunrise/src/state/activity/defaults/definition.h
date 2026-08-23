@@ -98,6 +98,12 @@ struct ActivityDefaults final {
     std::uint32_t squadPlaceKey{0xEF4EAA1E};
     std::uint16_t squadPlaceIndex{91};
     /**
+     * Region to inject the squad group in. The roster's region is not spatial progression: a whole
+     * playthrough reports region 0. -1 (default) injects in every region snapshot, so the group is
+     * present in the region 0 the player plays in; a non-negative value scopes it to that region.
+     */
+    std::int32_t squadPlaceRegion{-1};
+    /**
      * Phase-2 command emitter (`sense_update`, message type 6). Type 6 is a server->client command
      * the client parses; it never originates one (measured: an entire mission traversal shows zero
      * inbound type 6). When enabled, the keepalive appends one sense_update whose body is the

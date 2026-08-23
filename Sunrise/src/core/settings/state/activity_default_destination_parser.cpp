@@ -68,6 +68,7 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
     bool hasSquadPlaceValue = false;
     bool hasSquadPlaceKey = false;
     bool hasSquadPlaceIndex = false;
+    bool hasSquadPlaceRegion = false;
     bool hasCommandEmitEnabled = false;
     bool hasCommandBody = false;
     bool hasScriptBodyEnabled = false;
@@ -135,6 +136,15 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
             }
             output.squadPlaceIndex = static_cast<std::uint16_t>(index);
             hasSquadPlaceIndex = true;
+        } else if (key == "squad_place_region") {
+            std::int64_t region = 0;
+            if (hasSquadPlaceRegion || !signed_integer(region)
+                || region < (std::numeric_limits<std::int32_t>::min)()
+                || region > (std::numeric_limits<std::int32_t>::max)()) {
+                return false;
+            }
+            output.squadPlaceRegion = static_cast<std::int32_t>(region);
+            hasSquadPlaceRegion = true;
         } else if (key == "command_emit_enabled") {
             if (hasCommandEmitEnabled || !boolean(output.commandEmitEnabled)) {
                 return false;

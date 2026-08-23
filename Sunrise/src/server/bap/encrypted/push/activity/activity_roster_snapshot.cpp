@@ -152,17 +152,16 @@ fill_roster(const layouts::Definition& layout, Scratch& scratch,
     roster.topLevelGroupCount = layout.rosterGroupCount;
     roster.groupCount = groupCount;
     // DIAGNOSTIC squad.place injection (RUNTIME SEED TEST): synthesize a one-slot type-1 squad group
-    // keyed by squadPlaceKey. The earlier attempt held at the entry region (region 0), where the
-    // combat bubble content is not loaded, so the client cannot seed the squad object. This tests the
-    // runtime-seed insight: whether the SAME injected slot SEEDS once the player is in the combat
-    // region (region 8), where the client has loaded and registered the squad object from its own
-    // content. No auth body yet (squad_place_width 0): this isolates the seed from the body. The
-    // roster log line carries the region, so a seed at region 8 vs the region-0 hold is readable.
-    // Self-diagnosing: objects rises on inject; keepalive revision stalls on hold, advances on seed.
-    // Scope the injection to a non-entry region: at the entry (region 0) the combat bubble is not
-    // loaded, so a squad slot there holds the whole mission load. Only past the entry does the client
-    // have the squad content, so only there can the injected slot seed.
-    if (defaults.squadPlaceEnabled && region != 0 && roster.groupCount < roster.groups.size()
+    // keyed by squadPlaceKey. The roster's `region` field is NOT the player's spatial progression:
+    // a whole mission playthrough reports region 0, with a brief non-zero flicker only during the
+    // initial activity load, so an earlier `region != 0` gate never fired during play. Gate instead
+    // on the tunable squadPlaceRegion (default -1 = every region, so it fires at the region 0 the
+    // player actually plays in). No auth body isolates the seed from the body. The roster log line
+    // carries the region; objects rises on inject; keepalive revision stalls on hold, advances on
+    // seed, so a seed vs a hold is readable per region.
+    const bool regionMatches =
+        defaults.squadPlaceRegion < 0 || region == defaults.squadPlaceRegion;
+    if (defaults.squadPlaceEnabled && regionMatches && roster.groupCount < roster.groups.size()
         && roster.groupCount < scratch.rosterGroups.size()) {
         const std::size_t at = roster.topLevelGroupCount;
         for (std::size_t index = roster.groupCount; index > at; --index) {
