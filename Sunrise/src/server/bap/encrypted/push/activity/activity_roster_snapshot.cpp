@@ -127,6 +127,7 @@ constexpr std::uint64_t kIdentityLowMask = 0xFFFFFFFFULL;
 [[nodiscard]] bool
 fill_roster(const layouts::Definition& layout, Scratch& scratch,
             const state::activity::defaults::ActivityDefaults& defaults,
+            std::int32_t region,
             message::Roster& roster) noexcept {
     roster = {};
     const std::size_t groupCount =
@@ -158,7 +159,10 @@ fill_roster(const layouts::Definition& layout, Scratch& scratch,
     // content. No auth body yet (squad_place_width 0): this isolates the seed from the body. The
     // roster log line carries the region, so a seed at region 8 vs the region-0 hold is readable.
     // Self-diagnosing: objects rises on inject; keepalive revision stalls on hold, advances on seed.
-    if (defaults.squadPlaceEnabled && roster.groupCount < roster.groups.size()
+    // Scope the injection to a non-entry region: at the entry (region 0) the combat bubble is not
+    // loaded, so a squad slot there holds the whole mission load. Only past the entry does the client
+    // have the squad content, so only there can the injected slot seed.
+    if (defaults.squadPlaceEnabled && region != 0 && roster.groupCount < roster.groups.size()
         && roster.groupCount < scratch.rosterGroups.size()) {
         const std::size_t at = roster.topLevelGroupCount;
         for (std::size_t index = roster.groupCount; index > at; --index) {
@@ -299,14 +303,11 @@ RosterOutcome build_roster_snapshot(Session& session,
     if (!state::build_data::find_scenario_layout(name, layout)) {
         return RosterOutcome::noLayout;
     }
-    if (!fill_roster(layout, scratch, defaults, snapshot.roster)) {
-        return RosterOutcome::noGroups;
-    }
-
     const state::activity::defaults::FallbackPolicy& fallback =
         defaults.defaultDestination.fallback;
     // One resolution serves this body and the citizen advertisement in message 12. Two would let
-    // the join descriptor land in a region record the client is not pending on.
+    // the join descriptor land in a region record the client is not pending on. Computed before
+    // fill_roster so the squad.place injection can scope itself to the combat region.
     EffectiveRegion region{};
     region.arrival = arrival_slice_set(defaults.defaultDestination, selection, name, layout);
     if (session.activity.role == ActivityClientRole::publicTarget) {
@@ -320,6 +321,9 @@ RosterOutcome build_roster_snapshot(Session& session,
     }
     if (region.index < 0) {
         return RosterOutcome::noLayout;
+    }
+    if (!fill_roster(layout, scratch, defaults, region.index, snapshot.roster)) {
+        return RosterOutcome::noGroups;
     }
     snapshot.patchEpoch = session.activityPatchEpoch.value;
     // The character the join named wins, resolved to its authored SOID. The client binds its
