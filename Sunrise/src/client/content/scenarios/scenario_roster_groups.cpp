@@ -39,6 +39,26 @@ constexpr std::array<std::uint32_t, 18> kScopedSensorKeys = {
 }
 
 /**
+ * SCOPED SQUAD PROBE (diagnostic). The parent objects that carry Chosen's squad slots (type 1) are
+ * not whitelisted, so mission_reunion publishes no squad slot at all. Key 0xEF4EAA1E carries
+ * squad_ikora / squad_cabal_dropoff_1 / squad_cabal_puncher (measured: 30 and 43 squad slots on its
+ * two placements, key non-zero -- the object_key=0 seen before was the squad sub-instance, not this
+ * parent). Admitting it by exact key publishes the squad slots against the object's REAL structure,
+ * which the client can seed, where the earlier one-slot synthetic injection could not. To be removed.
+ */
+constexpr std::array<std::uint32_t, 1> kScopedSquadKeys = {0xef4eaa1eU};
+
+/** True when a registry key is one of the scoped squad-parent objects to admit past the whitelist. */
+[[nodiscard]] bool is_scoped_squad(std::uint32_t registryKey) noexcept {
+    for (const std::uint32_t key : kScopedSquadKeys) {
+        if (key == registryKey) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * Records one descriptor as a slot of the object being resolved.
  * @param context Roster storage.
  * @param descriptor Descriptor read from a placed-object blob.
@@ -195,7 +215,10 @@ bool resolve_object(const reader::Source& source,
                 witnessKey,
                 squadSlots,
                 sensorSlots,
-                tables::carries_roster_slot(storage.object) ? 1 : 0);
+                (tables::carries_roster_slot(storage.object) || is_scoped_sensor(witnessKey)
+                 || is_scoped_squad(witnessKey))
+                    ? 1
+                    : 0);
             if (witnessLen > 0) {
                 core::log::write(core::log::Channel::state,
                                  core::log::Level::warn,
@@ -208,7 +231,8 @@ bool resolve_object(const reader::Source& source,
     tables::Array declared{};
     if (!tables::object_key(storage.object, candidate.registryKey) || candidate.registryKey == 0
         || (!tables::carries_roster_slot(storage.object)
-            && !is_scoped_sensor(candidate.registryKey))
+            && !is_scoped_sensor(candidate.registryKey)
+            && !is_scoped_squad(candidate.registryKey))
         || !tables::object_slots(storage.object, declared) || declared.count == 0
         || declared.count > layouts::kRosterSlotCapacity) {
         return true;
