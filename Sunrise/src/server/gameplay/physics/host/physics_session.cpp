@@ -451,6 +451,25 @@ void tick_bound(Storage& table, std::size_t slot, std::uint64_t now) noexcept {
            contribution.entityPresent ? 1 : 0);
     if (framed == replication::FramePrepareResult::ready
         || framed == replication::FramePrepareResult::full) {
+        // Encode witness (next rung of the drive). write_external_entity_frame has no caller in the
+        // tree: the codec header marks its four entry points "no caller yet ... wait on the
+        // gameplay_external_body gate". Drive it here against the scriptless codec to test whether
+        // the compiled encode turns the drive's real built frame into a bit stream. The bytes are
+        // witnessed, not sent: the established packet carries only ack + reliable queues (no state
+        // slot), and the native client has no decoder for an external frame. So this measures
+        // whether the frame ENCODES, one rung past whether it builds -- still not enemies.
+        std::array<std::byte, 2048> frameBytes{};
+        middleware::encoding::bits::Writer frameWriter(frameBytes);
+        std::size_t frameBits = 0;
+        const bool encoded = middleware::gameplay::external::write_external_entity_frame(
+            frameWriter, replication::scriptless_payload_codec(), contribution.frame);
+        const bool finished = encoded && frameWriter.finish(frameBits);
+        report(core::log::Level::info,
+               "ev=physics stage=encode result=%s bits=%zu common=%d entity=%d",
+               finished ? "ok" : "fail",
+               frameBits,
+               contribution.commonPresent ? 1 : 0,
+               contribution.entityPresent ? 1 : 0);
         static_cast<void>(table.coordinators[slot].settle_frame(*probeServices.replication,
                                                                 *probeServices.common, contribution,
                                                                 packetGeneration,
