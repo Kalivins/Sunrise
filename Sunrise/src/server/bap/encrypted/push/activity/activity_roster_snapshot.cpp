@@ -345,6 +345,9 @@ RosterOutcome build_roster_snapshot(Session& session,
     snapshot.squadPlaceEnabled = defaults.squadPlaceEnabled;
     snapshot.squadPlaceWidth = defaults.squadPlaceWidth;
     snapshot.squadPlaceValue = defaults.squadPlaceValue;
+    // Placement body field 0 references the same squad object/slot the injected roster group seeds.
+    snapshot.squadPlaceKey = defaults.squadPlaceKey;
+    snapshot.squadPlaceIndex = defaults.squadPlaceIndex;
     // Exit-3 auth bodies: carry the settings bit-programs to the auth-body writer. The two step
     // types sit on opposite sides of the layer boundary, so copy field by field.
     snapshot.scriptBodyEnabled = defaults.scriptBodyEnabled;

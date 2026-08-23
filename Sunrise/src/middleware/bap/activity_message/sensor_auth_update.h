@@ -135,6 +135,10 @@ struct Snapshot final {
     bool squadPlaceEnabled{};
     std::uint8_t squadPlaceWidth{};
     std::uint64_t squadPlaceValue{};
+    /** Slot-reference target for the placement body's field 0: the squad object's registry key and
+     *  slot index, matching the seeded roster slot so the consumer lookup resolves. */
+    std::uint32_t squadPlaceKey{};
+    std::uint32_t squadPlaceIndex{};
     /**
      * Exit-3 auth bodies for the activity-script authority (slot type 18) and the mission director
      * (slot type 35): objects the mission mounts natively but that Sunrise leaves bodyless. Each is

@@ -43,8 +43,11 @@ constexpr std::uint8_t kSpawnOverrideIndexWidth = 10;
 constexpr std::uint32_t kSpawnOverrideIndexBias = 1;
 /** Type 67 maps the 32 spawn-key ordinals to themselves, matching its constructor. */
 constexpr std::size_t kSpawnKeyCount = 32;
-/** Type 1 (squad) minimal 0x80807ec9 body: 18 absent optionals + a 2-bit + a 3-bit field + 1 more. */
-constexpr std::size_t kSquadBodyBits = 18 + 2 + 3 + 1;
+/** Type 1 (squad) placement 0x80807ec9 body: field 0 present as a slot reference (presence + key +
+ * type + index) so the consumer lookup resolves and [rdi] != 0 fires the placement branch, then 17
+ * absent optionals, the 2-bit and 3-bit fixed fields, and one absent optional. */
+constexpr std::size_t kSquadBodyBits =
+    kPresenceWidth + 32 + kSlotTypeWidth + kSlotIndexWidth + 17 + 2 + 3 + kPresenceWidth;
 
 /**
  * Writes the participation body, which binds the player and latches the region. Zero-fill is not
@@ -171,8 +174,8 @@ auth_body_bits(const Snapshot& snapshot, std::uint8_t slotType, bool carriesPlay
         return kSpawnKeyBits;
     }
     // squad.place body: the type-1 slot's authSchema 0x80807ec9, RE'd by emulating the schema
-    // deserializer 0x4c74b0. The minimal form (all optionals absent) is 24 bits: 18 presence bits,
-    // a 2-bit and a 3-bit fixed field, then one presence bit.
+    // deserializer 0x4c74b0. The placement form presents field 0 (a slot reference), the field the
+    // consumer (0x1703d70) reads to drive its placement branch; see kSquadBodyBits.
     if (slotType == kSlotTypeSquad && snapshot.squadPlaceEnabled) {
         return kSquadBodyBits;
     }
@@ -214,12 +217,17 @@ bool write_auth_body(bits::Writer& writer,
     } else if (slotType == kSlotTypeSpawnKeys) {
         encoded = write_spawn_keys(writer);
     } else if (slotType == kSlotTypeSquad && snapshot.squadPlaceEnabled) {
-        // Minimal 0x80807ec9 body (24 bits): 18 absent optionals, a 2-bit and a 3-bit fixed field,
-        // then one absent optional. The two fixed fields are tunable via squadPlaceValue (low 2 bits
-        // -> field 18, next 3 bits -> field 19) to probe the "authored default" placement, where the
-        // client places the squad from its own authored content. Anchor/ref optionals come after this
-        // validates that the client accepts a body on the seeded slot without desync.
-        for (std::size_t index = 0; encoded && index < 18; ++index) {
+        // Placement 0x80807ec9 body: field 0 present as a slot reference keyed to the squad object,
+        // so the consumer's lookup (0x1703e70) resolves it and the first-field read at 0x1703da7
+        // ([rdi] != 0) drives the placement branch (0x16fe700) rather than the empty else path. The
+        // minimal body (field 0 absent) is accepted with no desync but never places; this presents
+        // the trigger field. Remaining 17 optionals absent, the 2-bit/3-bit fixed fields carry
+        // squadPlaceValue, and the last optional stays absent.
+        encoded = writer.write(1, kPresenceWidth)
+                  && writer.write(snapshot.squadPlaceKey, 32)
+                  && writer.write(kSlotTypeBias + kSlotTypeSquad, kSlotTypeWidth)
+                  && writer.write(snapshot.squadPlaceIndex + kSlotIndexBias, kSlotIndexWidth);
+        for (std::size_t index = 0; encoded && index < 17; ++index) {
             encoded = writer.write(0, kPresenceWidth);
         }
         encoded = encoded && writer.write(snapshot.squadPlaceValue & 0x3U, 2)
