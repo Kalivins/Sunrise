@@ -1,6 +1,8 @@
 #include <array>
 #include <cstdint>
+#include <cstdio>
 
+#include "../../../core/logging/log.h"
 #include "../../../middleware/content/packages/tables/roster_intersection.h"
 #include "../../../middleware/content/packages/tables/scenario_reader.h"
 #include "../../../middleware/content/packages/tables/slot_descriptor_reader.h"
@@ -156,6 +158,39 @@ bool resolve_object(const reader::Source& source,
     ++storage.reads;
     if (!reader::read_tag(source, scratch, objectTag, storage.object)) {
         return true;
+    }
+
+    // WITNESS (diagnostic): the runtime object_key of any object carrying a type-30 slot, to settle
+    // whether Chosen's sensors have a valid key or hit the placement key=0 wall. Removed after.
+    {
+        std::uint32_t witnessKey = 0;
+        tables::object_key(storage.object, witnessKey);
+        tables::Array witnessSlots{};
+        bool hasSensor = false;
+        if (tables::object_slots(storage.object, witnessSlots)) {
+            for (std::uint64_t s = 0; s < witnessSlots.count && !hasSensor; ++s) {
+                tables::Slot descriptor{};
+                if (tables::object_slot_at(storage.object, witnessSlots, s, descriptor)
+                    && descriptor.type == 30) {
+                    hasSensor = true;
+                }
+            }
+        }
+        if (hasSensor) {
+            std::array<char, core::log::kLineCapacity> witnessLine{};
+            const int witnessLen =
+                std::snprintf(witnessLine.data(),
+                              witnessLine.size(),
+                              "ev=build_data stage=sensor_key tag=0x%08X key=0x%08X scoped=%d",
+                              objectTag,
+                              witnessKey,
+                              is_scoped_sensor(witnessKey) ? 1 : 0);
+            if (witnessLen > 0) {
+                core::log::write(core::log::Channel::state,
+                                 core::log::Level::warn,
+                                 {witnessLine.data(), static_cast<std::size_t>(witnessLen)});
+            }
+        }
     }
 
     layouts::RosterGroup candidate{};
