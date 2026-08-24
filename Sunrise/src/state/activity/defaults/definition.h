@@ -116,6 +116,15 @@ struct ActivityDefaults final {
     std::array<CommandBodyStep, kCommandBodyCapacity> commandBody{};
     std::uint8_t commandBodyCount{};
     /**
+     * DIAGNOSTIC content-load command sweep. When enabled, each keepalive emits a sense_update whose
+     * delta is a single record with field 0 (the 13-bit lead field) set to an index that advances by
+     * one every send, and the four nested fields authored from commandSweepValue. The binding-creator
+     * trace fires if any index makes the client load an object, so one session sweeps the index space
+     * while the log correlates the fired index. Overrides commandBody. Off by default.
+     */
+    bool commandSweepEnabled{};
+    std::uint64_t commandSweepValue{};
+    /**
      * Exit-3 auth bodies for two objects the mission mounts natively but that Sunrise leaves
      * bodyless: the activity-script authority (slot type 18, schema 0x80809919) and the mission
      * director (slot type 35, schema 0x808099BF), which share the validity-window block 0x808099C4.

@@ -71,6 +71,8 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
     bool hasSquadPlaceRegion = false;
     bool hasCommandEmitEnabled = false;
     bool hasCommandBody = false;
+    bool hasCommandSweepEnabled = false;
+    bool hasCommandSweepValue = false;
     bool hasScriptBodyEnabled = false;
     bool hasScriptBody = false;
     bool hasDirectorBodyEnabled = false;
@@ -155,6 +157,18 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
                 return false;
             }
             hasCommandBody = true;
+        } else if (key == "command_sweep_enabled") {
+            if (hasCommandSweepEnabled || !boolean(output.commandSweepEnabled)) {
+                return false;
+            }
+            hasCommandSweepEnabled = true;
+        } else if (key == "command_sweep_value") {
+            std::uint64_t value = 0;
+            if (hasCommandSweepValue || !unsigned_integer(value)) {
+                return false;
+            }
+            output.commandSweepValue = value;
+            hasCommandSweepValue = true;
         } else if (key == "script_body_enabled") {
             if (hasScriptBodyEnabled || !boolean(output.scriptBodyEnabled)) {
                 return false;
