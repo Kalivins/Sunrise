@@ -503,6 +503,18 @@ void tick_bound(Storage& table, std::size_t slot, std::uint64_t now) noexcept {
            contribution.commonPresent ? 1 : 0, contribution.entityPresent ? 1 : 0);
     if (framed == replication::FramePrepareResult::ready
         || framed == replication::FramePrepareResult::full) {
+        // Frame detail: is the built record a create (lifecycle!=0, baseline carries the 55-bit squad
+        // schema) or an update (lifecycle==0, my update part emits nothing)? bits=39 alone can't tell
+        // the two apart, so log the record shape once the frame is ready.
+        const auto& builtRecord = contribution.frame.entities.record;
+        report(core::log::Level::info,
+               "ev=physics stage=frame_detail present=%d flags=0x%X type=%u life=%u base_bytes=%u "
+               "upd_bytes=%u",
+               contribution.frame.entities.recordPresent ? 1 : 0,
+               static_cast<unsigned>(builtRecord.flags), static_cast<unsigned>(builtRecord.type),
+               static_cast<unsigned>(builtRecord.lifecycleRevision),
+               static_cast<unsigned>(builtRecord.baseline.byteCount),
+               static_cast<unsigned>(builtRecord.update.byteCount));
         // Encode witness (next rung of the drive). write_external_entity_frame has no caller in the
         // tree: the codec header marks its four entry points "no caller yet ... wait on the
         // gameplay_external_body gate". Drive it here against the scriptless codec to test whether
