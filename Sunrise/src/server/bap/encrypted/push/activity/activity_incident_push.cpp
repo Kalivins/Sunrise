@@ -32,17 +32,24 @@ std::atomic<std::uint32_t> g_incidentSweep{0};
 /** Ceiling on incidents staged in one keepalive, so a block sweep cannot exhaust the frame buffer. */
 constexpr std::uint32_t kMaxIncidentsPerSend = 128;
 
-/**
- * Stages one incident frame for `target`, advancing nonce and written only when the whole frame fits.
- * @return True when a frame was staged; false when the target is dropped by the encoder or nothing fit.
- */
-[[nodiscard]] bool emit_one(Session& session,
-                            Scratch& scratch,
-                            std::span<const std::byte, state::kAesKeySize> key,
-                            std::array<std::byte, state::kBapNonceSize>& nonce,
-                            std::span<std::byte> response,
-                            std::size_t& written,
-                            std::uint32_t target) noexcept {
+/** Outcome of one incident emit, so the sweep advances past dropped targets but retries no-fit ones. */
+enum class EmitResult {
+    /** A frame was staged for the target. */
+    staged,
+    /** The encoder refused the target (poison or out of range); skip it and move on. */
+    dropped,
+    /** The target is valid but the frame did not fit the buffer; stop and retry it next send. */
+    noFit,
+};
+
+/** Stages one incident frame for `target`, advancing nonce and written only when the frame fits. */
+[[nodiscard]] EmitResult emit_one(Session& session,
+                                  Scratch& scratch,
+                                  std::span<const std::byte, state::kAesKeySize> key,
+                                  std::array<std::byte, state::kBapNonceSize>& nonce,
+                                  std::span<std::byte> response,
+                                  std::size_t& written,
+                                  std::uint32_t target) noexcept {
     incident::Incident body{};
     body.primaryTarget = target;
 
@@ -50,13 +57,13 @@ constexpr std::uint32_t kMaxIncidentsPerSend = 128;
     std::size_t requiredSize = 0;
     if (!incident::write(measure, body) || !measure.finish(requiredSize)
         || requiredSize > scratch.responseBody.size()) {
-        return false;
+        return EmitResult::dropped;
     }
     bits::Writer writer(scratch.responseBody);
     std::size_t messageSize = 0;
     if (!incident::write(writer, body) || !writer.finish(messageSize)
         || messageSize != requiredSize) {
-        return false;
+        return EmitResult::dropped;
     }
 
     const std::size_t initialWritten = written;
@@ -81,7 +88,7 @@ constexpr std::uint32_t kMaxIncidentsPerSend = 128;
     }
     SecureZeroMemory(scratch.responseBody.data(), messageSize);
     SecureZeroMemory(&initialNonce, sizeof initialNonce);
-    return encoded;
+    return encoded ? EmitResult::staged : EmitResult::noFit;
 }
 
 } // namespace
@@ -109,26 +116,35 @@ bool append_incident_notification(Session& session,
         return false;
     }
 
-    // A fixed target sends once; a sweep sends a block of consecutive targets and advances the base
-    // by the block so the next keepalive continues where this one stopped. The base is captured once.
+    // A fixed target sends once; a sweep sends a block of consecutive targets. The base advances only
+    // by what was consumed this send (staged + encoder-dropped), so a target skipped for want of
+    // buffer space is retried next keepalive rather than silently lost. Keepalives are serialized per
+    // session, so the load/store around the shared base needs no stronger ordering.
     const std::uint32_t blockSize =
         settings.incidentSweepEnabled
             ? std::min(std::max(settings.incidentBlockSize, 1U), kMaxIncidentsPerSend)
             : 1U;
     const std::uint32_t sweepBase =
-        settings.incidentSweepEnabled
-            ? g_incidentSweep.fetch_add(blockSize, std::memory_order_relaxed)
-            : 0U;
+        settings.incidentSweepEnabled ? g_incidentSweep.load(std::memory_order_relaxed) : 0U;
 
     std::uint32_t staged = 0;
-    std::uint32_t firstTarget = settings.incidentTarget + sweepBase;
+    std::uint32_t processed = 0;
+    const std::uint32_t firstTarget = settings.incidentTarget + sweepBase;
     std::uint32_t lastTarget = firstTarget;
     for (std::uint32_t index = 0; index < blockSize; ++index) {
         const std::uint32_t target = settings.incidentTarget + sweepBase + index;
-        if (emit_one(session, scratch, key, nonce, response, written, target)) {
+        const EmitResult result = emit_one(session, scratch, key, nonce, response, written, target);
+        if (result == EmitResult::noFit) {
+            break;
+        }
+        ++processed;
+        if (result == EmitResult::staged) {
             ++staged;
             lastTarget = target;
         }
+    }
+    if (settings.incidentSweepEnabled) {
+        g_incidentSweep.store(sweepBase + processed, std::memory_order_relaxed);
     }
 
     // Witness: the block range and how many frames were staged, so an on-screen effect can be mapped
