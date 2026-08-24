@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <cstdio>
 
 #include "../../../../core/logging/log.h"
@@ -15,6 +16,74 @@ namespace {
 /** Log the decoder and the forced arm once each. Both run on every roster message. */
 std::atomic_bool g_decoderSeen{false};
 std::atomic_bool g_forcedSeen{false};
+
+/** SEED WITNESS (diagnostic): the roster's registered and seeded lane masks, whose relative offsets
+ *  the apply function reads. A lane is held when registered but not seeded, so comparing the two
+ *  popcounts after a decode says whether the published object lanes actually seed. */
+constexpr std::size_t kRegisteredMaskOffset = 0x10eb8;
+constexpr std::size_t kSeededMaskOffset = 0x10ec4;
+constexpr std::size_t kMaskWords = 4;
+std::atomic<unsigned> g_lastRegistered{0xFFFFFFFFU};
+std::atomic<unsigned> g_lastSeeded{0xFFFFFFFFU};
+
+/** @return Set-bit count of a 32-bit word. */
+[[nodiscard]] unsigned popcount32(std::uint32_t value) noexcept {
+    unsigned count = 0;
+    while (value != 0) {
+        value &= value - 1;
+        ++count;
+    }
+    return count;
+}
+
+/** Reads both lane masks from the decoded roster and logs registered vs seeded when either changes. */
+void report_seed(const void* roster) noexcept {
+    if (roster == nullptr) {
+        return;
+    }
+    unsigned registered = 0;
+    unsigned seeded = 0;
+    std::uint32_t registeredWords[kMaskWords] = {};
+    std::uint32_t seededWords[kMaskWords] = {};
+    __try {
+        const auto* base = static_cast<const std::uint8_t*>(roster);
+        const auto* registeredMask =
+            reinterpret_cast<const std::uint32_t*>(base + kRegisteredMaskOffset);
+        const auto* seededMask = reinterpret_cast<const std::uint32_t*>(base + kSeededMaskOffset);
+        for (std::size_t word = 0; word < kMaskWords; ++word) {
+            registeredWords[word] = registeredMask[word];
+            seededWords[word] = seededMask[word];
+            registered += popcount32(registeredWords[word]);
+            seeded += popcount32(seededWords[word]);
+        }
+    } __except (1) {
+        return;
+    }
+    if (registered == g_lastRegistered.load(std::memory_order_relaxed)
+        && seeded == g_lastSeeded.load(std::memory_order_relaxed)) {
+        return;
+    }
+    g_lastRegistered.store(registered, std::memory_order_relaxed);
+    g_lastSeeded.store(seeded, std::memory_order_relaxed);
+    std::array<char, 160> line{};
+    const int written = std::snprintf(
+        line.data(),
+        line.size(),
+        "ev=bubbleauth stage=seed registered=%u seeded=%u held=%d reg0=0x%08X reg1=0x%08X "
+        "seed0=0x%08X seed1=0x%08X",
+        registered,
+        seeded,
+        static_cast<int>(registered) - static_cast<int>(seeded),
+        registeredWords[0],
+        registeredWords[1],
+        seededWords[0],
+        seededWords[1]);
+    if (written > 0) {
+        core::log::write(core::log::Channel::client,
+                         core::log::Level::info,
+                         {line.data(), static_cast<std::size_t>(written)});
+    }
+}
 
 /**
  * Logs the first roster decode and the first forced authority read. The forced read is what makes
@@ -67,6 +136,9 @@ __declspec(noinline) bool __fastcall decoder_body(void* roster,
             scope::leave();
         }
         coordinator::g_callEgress();
+    }
+    if (scoped) {
+        report_seed(roster);
     }
     return result;
 }
