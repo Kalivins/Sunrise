@@ -1,5 +1,7 @@
 #include <bitset>
+#include <cstddef>
 #include <limits>
+#include <string_view>
 
 #include "../../../state/activity/defaults/activity_defaults_validation.h"
 #include "../parser.h"
@@ -9,6 +11,20 @@ namespace {
 
 /** An unsigned hash field is one fixed 32-bit value. */
 constexpr std::uint64_t kMaximumHash = (std::numeric_limits<std::uint32_t>::max)();
+
+/** @return The nibble value of one hex digit, or -1 when the character is not hex. */
+[[nodiscard]] int hex_nibble(char value) noexcept {
+    if (value >= '0' && value <= '9') {
+        return value - '0';
+    }
+    if (value >= 'a' && value <= 'f') {
+        return value - 'a' + 10;
+    }
+    if (value >= 'A' && value <= 'F') {
+        return value - 'A' + 10;
+    }
+    return -1;
+}
 
 /** Fields needed for one complete authored destination and numeric fallback row. */
 enum class DestinationField : std::size_t {
@@ -81,6 +97,8 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
     bool hasIncidentTarget = false;
     bool hasIncidentSweepEnabled = false;
     bool hasIncidentBlockSize = false;
+    bool hasIncidentReplayEnabled = false;
+    bool hasIncidentBody = false;
     if (consume('}')) {
         return true;
     }
@@ -218,6 +236,28 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
             }
             output.incidentBlockSize = static_cast<std::uint32_t>(value);
             hasIncidentBlockSize = true;
+        } else if (key == "incident_replay_enabled") {
+            if (hasIncidentReplayEnabled || !boolean(output.incidentReplayEnabled)) {
+                return false;
+            }
+            hasIncidentReplayEnabled = true;
+        } else if (key == "incident_body") {
+            std::string_view hex;
+            if (hasIncidentBody || !string(hex) || hex.size() % 2 != 0
+                || hex.size() / 2 > output.incidentBody.size()) {
+                return false;
+            }
+            for (std::size_t index = 0; index < hex.size(); index += 2) {
+                const int high = hex_nibble(hex[index]);
+                const int low = hex_nibble(hex[index + 1]);
+                if (high < 0 || low < 0) {
+                    return false;
+                }
+                output.incidentBody[index / 2] =
+                    static_cast<std::byte>((high << 4) | low);
+            }
+            output.incidentBodyLength = static_cast<std::uint16_t>(hex.size() / 2);
+            hasIncidentBody = true;
         } else if (!skip_value(0)) {
             return false;
         }

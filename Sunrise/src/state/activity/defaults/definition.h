@@ -145,6 +145,16 @@ struct ActivityDefaults final {
     bool incidentSweepEnabled{};
     std::uint32_t incidentBlockSize{1};
     /**
+     * Verbatim incident replay. A real in-play incident carries a payload; the parser's
+     * `stage=incident_body` capture logs the exact bytes the client sent. Put those bytes back here
+     * (as `incident_body`, a hex string) and set `incident_replay_enabled` to re-emit that whole body
+     * server->client each keepalive, unchanged, so a captured real incident can be fired back at the
+     * client with its payload intact. Overrides the target/sweep path. Off by default.
+     */
+    bool incidentReplayEnabled{};
+    std::array<std::byte, 1024> incidentBody{};
+    std::uint16_t incidentBodyLength{};
+    /**
      * Exit-3 auth bodies for two objects the mission mounts natively but that Sunrise leaves
      * bodyless: the activity-script authority (slot type 18, schema 0x80809919) and the mission
      * director (slot type 35, schema 0x808099BF), which share the validity-window block 0x808099C4.

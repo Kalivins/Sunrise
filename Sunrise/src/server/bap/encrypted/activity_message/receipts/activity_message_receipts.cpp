@@ -332,6 +332,34 @@ Framed frame_incident(const message::Request& request) noexcept {
            parsed.selectorLength,
            static_cast<unsigned>(parsed.hasOptionalBlock),
            parsed.payloadLength);
+    if (accepted) {
+        // Capture the exact incident body. A real in-play incident carries a payload the client sent;
+        // replaying it target-only does nothing, so the whole body is dumped to be re-emitted
+        // server->client verbatim. Bounded to one log line.
+        std::array<char, core::log::kLineCapacity> body{};
+        int used = std::snprintf(body.data(),
+                                 body.size(),
+                                 "ev=activity stage=incident_body target=%u bytes=%zu hex=",
+                                 parsed.primaryTarget,
+                                 request.payload.size());
+        for (std::size_t index = 0; index < request.payload.size() && used > 0
+                                    && static_cast<std::size_t>(used) + 3 < body.size();
+             ++index) {
+            const int printed =
+                std::snprintf(body.data() + used,
+                              body.size() - static_cast<std::size_t>(used),
+                              "%02x",
+                              static_cast<unsigned>(
+                                  std::to_integer<unsigned char>(request.payload[index])));
+            if (printed <= 0) {
+                break;
+            }
+            used += printed;
+        }
+        if (used > 0) {
+            report(core::log::Level::debug, "%s", body.data());
+        }
+    }
     if (!accepted) {
         // A refused target index would index the consumer's table unbounded, so the body is kept
         // and never relayed.

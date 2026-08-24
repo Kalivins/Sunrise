@@ -116,6 +116,50 @@ bool append_incident_notification(Session& session,
         return false;
     }
 
+    // Verbatim replay of a captured real incident body takes precedence over the target/sweep path:
+    // a real incident carries a payload, so only its exact bytes trigger the client's consumer.
+    if (settings.incidentReplayEnabled && settings.incidentBodyLength > 0
+        && settings.incidentBodyLength <= scratch.responseBody.size()) {
+        std::copy_n(
+            settings.incidentBody.data(), settings.incidentBodyLength, scratch.responseBody.data());
+        const std::size_t initialWritten = written;
+        auto initialNonce = nonce;
+        const bool encoded = append_notification_frame(
+            scratch,
+            session.activity.session.sessionId,
+            incident::kMessageType,
+            std::span(scratch.responseBody).first(settings.incidentBodyLength),
+            key,
+            nonce,
+            response,
+            written);
+        if (encoded) {
+            middleware::secure_channel::advance_nonce(nonce);
+        } else {
+            if (written > initialWritten) {
+                SecureZeroMemory(response.data() + initialWritten, written - initialWritten);
+            }
+            written = initialWritten;
+            nonce = initialNonce;
+        }
+        SecureZeroMemory(scratch.responseBody.data(), settings.incidentBodyLength);
+        SecureZeroMemory(&initialNonce, sizeof initialNonce);
+        if (core::log::accepts(core::log::Channel::server, core::log::Level::debug)) {
+            std::array<char, core::log::kLineCapacity> line{};
+            const int used = std::snprintf(line.data(),
+                                           line.size(),
+                                           "ev=gameplay stage=incident result=%s mode=replay bytes=%u",
+                                           encoded ? "ok" : "fail",
+                                           static_cast<unsigned>(settings.incidentBodyLength));
+            if (used > 0) {
+                core::log::write(core::log::Channel::server,
+                                 core::log::Level::debug,
+                                 {line.data(), static_cast<std::size_t>(used)});
+            }
+        }
+        return encoded;
+    }
+
     // A fixed target sends once; a sweep sends a block of consecutive targets. The base advances only
     // by what was consumed this send (staged + encoder-dropped), so a target skipped for want of
     // buffer space is retried next keepalive rather than silently lost. Keepalives are serialized per
