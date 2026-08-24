@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <intrin.h>
 #include <string_view>
 
 #include "../../../core/logging/log.h"
@@ -14,46 +13,40 @@ namespace sunrise::client::hooks::bootflow {
 namespace {
 
 /**
- * DIAGNOSTIC binding-creation trace. FUN_00c22dd0 (RVA 0xc22dd0) is the binding-manager callback the
- * content system invokes; it walks the loaded-object table and calls the binding creator FUN_01703690
- * (which sets object+0x18, the flag the seed machine reads). It is called only indirectly through a
- * runtime callback, so static analysis cannot reach its caller -- the content-load trigger. Hook it
- * and log its return address, resolved to an image RVA, once per distinct site. That RVA is the
- * content-load trigger, the step the deleted mission director would drive to make a squad load. The
- * original is always called, so the game keeps loading content normally. To be removed.
+ * DIAGNOSTIC binding-creation ground-truth trace. FUN_01703690 (RVA 0x1703690) is the binding
+ * creator: it attaches a content object (its 4th argument) to a placed object (its 4th-argument
+ * receiver) and sets receiver+0x18, the flag the seed machine reads. Hooking it captures the two
+ * pointers at the source, so their structure is read from live memory instead of guessed from
+ * static offsets. Log, once per distinct receiver, the receiver's leading bytes (to locate its
+ * registry key against the known participant keys) and the content pointer, then forward unchanged.
+ * This maps what actually loads and binds during a mission, which is where a squad's content would
+ * have to appear. To be removed.
  */
-constexpr std::string_view kBindingTraceText =
-    "48 83 EC 28 E8 ? ? ? ? 48 85 C0 74 ? 48 89 5C 24 20 E8 ? ? ? ? 48 8B D8 E8";
+constexpr std::string_view kCreatorText =
+    "48 89 5C 24 ? 48 89 6C 24 ? 48 89 74 24 ? 57 48 83 EC 20 48 8B F1 49 8B D8 48 81 C1 70 02 00 00 48 8B FA";
 /** Compiled pattern bytes of the signature text above. */
-constexpr auto kBindingTrace = signature<signature_length(kBindingTraceText)>(kBindingTraceText);
+constexpr auto kCreator = signature<signature_length(kCreatorText)>(kCreatorText);
 
-/** RVA of the traced function, used to recover the image base from the resolved target. */
-constexpr std::uintptr_t kBindingTraceRva = 0xc22dd0;
-/** Main-image span, to tell a stack return address from other stack data. */
-constexpr std::uintptr_t kImageSpan = 0x8a5f000;
-/** Stack qwords to scan for the return-address chain. */
-constexpr std::size_t kStackScan = 96;
-/** Return addresses to record per chain. */
-constexpr std::size_t kChainDepth = 6;
-/** Distinct chains (keyed by the immediate caller RVA) to log before the trace goes quiet. */
-constexpr std::size_t kSeenCap = 24;
+/** Distinct receiver objects to dump before the trace goes quiet. */
+constexpr std::size_t kSeenCap = 12;
+/** Leading bytes of the receiver to dump, enough to cover the registry key and near fields. */
+constexpr std::size_t kDumpBytes = 0x30;
 
 hooking::detour::Handle g_handle{};
-std::uintptr_t g_base{};
-std::array<std::atomic<std::uint32_t>, kSeenCap> g_seen{};
+std::array<std::atomic<std::uintptr_t>, kSeenCap> g_seen{};
 
-using Original = void(__fastcall*)(void*, void*, void*, void*);
+using Original = void(__fastcall*)(void*, void*, void*, void*, void*);
 
-/** @return True if the caller-RVA key is new and was claimed, false if already seen or table full. */
-[[nodiscard]] bool claim(std::uint32_t key) noexcept {
+/** @return True if the receiver pointer is new and was claimed, false if seen or the table is full. */
+[[nodiscard]] bool claim(std::uintptr_t key) noexcept {
     std::size_t slot = 0;
     while (slot < kSeenCap) {
-        const std::uint32_t seen = g_seen[slot].load(std::memory_order_relaxed);
+        const std::uintptr_t seen = g_seen[slot].load(std::memory_order_relaxed);
         if (seen == key) {
             return false;
         }
         if (seen == 0) {
-            std::uint32_t expected = 0;
+            std::uintptr_t expected = 0;
             if (g_seen[slot].compare_exchange_strong(expected, key, std::memory_order_relaxed)) {
                 return true;
             }
@@ -64,54 +57,55 @@ using Original = void(__fastcall*)(void*, void*, void*, void*);
     return false;
 }
 
-/** Records the runtime return-address chain, then forwards to the native binding manager. */
-__declspec(noinline) void __fastcall binding_manager(void* a, void* b, void* c, void* d) noexcept {
-    if (g_base != 0) {
-        const auto* stack = reinterpret_cast<const std::uintptr_t*>(_AddressOfReturnAddress());
-        std::array<std::uint32_t, kChainDepth> chain{};
-        std::size_t found = 0;
-        for (std::size_t k = 0; k < kStackScan && found < kChainDepth; ++k) {
-            const std::uintptr_t value = stack[k];
-            if (value > g_base && value < g_base + kImageSpan) {
-                chain[found++] = static_cast<std::uint32_t>(value - g_base);
+/** Dumps the receiver and content pointers, then forwards to the native binding creator. */
+__declspec(noinline) void __fastcall creator(void* rcx, void* rdx, void* r8, void* r9, void* stack5) noexcept {
+    void* const receiver = r9;
+    void* const content = r8;
+    if (receiver != nullptr && claim(reinterpret_cast<std::uintptr_t>(receiver))) {
+        std::array<char, core::log::kLineCapacity> line{};
+        int used = std::snprintf(line.data(),
+                                 line.size(),
+                                 "ev=bindtrace stage=bind obj=0x%llX content=0x%llX bytes=",
+                                 static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(receiver)),
+                                 static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(content)));
+        const auto* raw = static_cast<const unsigned char*>(receiver);
+        for (std::size_t index = 0;
+             index < kDumpBytes && used > 0 && static_cast<std::size_t>(used) + 3 < line.size();
+             ++index) {
+            const int printed = std::snprintf(
+                line.data() + used, line.size() - static_cast<std::size_t>(used), "%02x", raw[index]);
+            if (printed <= 0) {
+                break;
             }
+            used += printed;
         }
-        if (found != 0 && claim(chain[0])) {
-            std::array<char, 160> line{};
-            int used = std::snprintf(line.data(), line.size(), "ev=bindtrace stage=content_load chain=");
-            for (std::size_t i = 0; i < found && used > 0 && static_cast<std::size_t>(used) + 12 < line.size(); ++i) {
-                used += std::snprintf(line.data() + used, line.size() - static_cast<std::size_t>(used),
-                                      "%s0x%08X", i == 0 ? "" : ",", chain[i]);
-            }
-            if (used > 0) {
-                core::log::write(core::log::Channel::client,
-                                 core::log::Level::info,
-                                 {line.data(), static_cast<std::size_t>(used)});
-            }
+        if (used > 0) {
+            core::log::write(core::log::Channel::client,
+                             core::log::Level::info,
+                             {line.data(), static_cast<std::size_t>(used)});
         }
     }
-    reinterpret_cast<Original>(g_handle.original)(a, b, c, d);
+    reinterpret_cast<Original>(g_handle.original)(rcx, rdx, r8, r9, stack5);
 }
 
 } // namespace
 
 /**
- * Attaches the binding-creation trace.
+ * Attaches the binding-creation ground-truth trace.
  * @return True when the target is found and the detour attaches.
  */
 bool install_binding_trace() noexcept {
     if (g_handle.attached) {
         return true;
     }
-    std::byte* const target = scan_main_image_unique(kBindingTrace, "binding_trace");
+    std::byte* const target = scan_main_image_unique(kCreator, "binding_creator");
     if (target == nullptr) {
         core::log::write(core::log::Channel::client,
                          core::log::Level::warn,
                          "ev=bindtrace result=fail reason=target");
         return false;
     }
-    g_base = reinterpret_cast<std::uintptr_t>(target) - kBindingTraceRva;
-    const hooking::detour::Spec spec{target, reinterpret_cast<void*>(&binding_manager)};
+    const hooking::detour::Spec spec{target, reinterpret_cast<void*>(&creator)};
     if (!hooking::detour::install(spec, g_handle)) {
         core::log::write(core::log::Channel::client,
                          core::log::Level::warn,
@@ -123,7 +117,7 @@ bool install_binding_trace() noexcept {
     return true;
 }
 
-/** Detaches the binding-creation trace. */
+/** Detaches the binding-creation ground-truth trace. */
 void uninstall_binding_trace() noexcept {
     if (g_handle.attached) {
         (void)hooking::detour::uninstall(g_handle);
