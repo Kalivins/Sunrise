@@ -528,11 +528,12 @@ void tick_bound(Storage& table, std::size_t slot, std::uint64_t now) noexcept {
                                    middleware::gameplay::external::EntityType::squad,
                                    middleware::gameplay::external::TypePayloadPart::baseline,
                                    emptyPayload, measure);
-            std::size_t baselineBits = 0;
-            const bool baselineFinished = baselineOk && measure.finish(baselineBits);
+            std::size_t baselineBytes = 0;
+            const bool baselineFinished = baselineOk && measure.finish(baselineBytes);
             report(core::log::Level::info,
-                   "ev=physics stage=baseline_probe ok=%d bits=%zu maxbase=%zu",
-                   baselineFinished ? 1 : 0, baselineBits, baseCodec.maximumBaselineBits);
+                   "ev=physics stage=baseline_probe ok=%d bits=%zu bytes=%zu maxbase=%zu",
+                   baselineFinished ? 1 : 0, measure.bit_count(), baselineBytes,
+                   baseCodec.maximumBaselineBits);
         }
         // Encode witness (next rung of the drive). write_external_entity_frame has no caller in the
         // tree: the codec header marks its four entry points "no caller yet ... wait on the
@@ -543,14 +544,15 @@ void tick_bound(Storage& table, std::size_t slot, std::uint64_t now) noexcept {
         // whether the frame ENCODES, one rung past whether it builds -- still not enemies.
         std::array<std::byte, 2048> frameBytes{};
         middleware::encoding::bits::Writer frameWriter(frameBytes);
-        std::size_t frameBits = 0;
+        std::size_t frameByteCount = 0;
         const bool encoded = middleware::gameplay::external::write_external_entity_frame(
             frameWriter, replication::scriptless_payload_codec(), contribution.frame);
-        const bool finished = encoded && frameWriter.finish(frameBits);
+        const bool finished = encoded && frameWriter.finish(frameByteCount);
         report(core::log::Level::info,
-               "ev=physics stage=encode result=%s bits=%zu common=%d entity=%d",
+               "ev=physics stage=encode result=%s bits=%zu bytes=%zu common=%d entity=%d",
                finished ? "ok" : "fail",
-               frameBits,
+               frameWriter.bit_count(),
+               frameByteCount,
                contribution.commonPresent ? 1 : 0,
                contribution.entityPresent ? 1 : 0);
         static_cast<void>(table.coordinators[slot].settle_frame(*probeServices.replication,
