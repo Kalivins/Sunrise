@@ -77,6 +77,9 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
     bool hasScriptBody = false;
     bool hasDirectorBodyEnabled = false;
     bool hasDirectorBody = false;
+    bool hasIncidentEmitEnabled = false;
+    bool hasIncidentTarget = false;
+    bool hasIncidentSweepEnabled = false;
     if (consume('}')) {
         return true;
     }
@@ -189,6 +192,23 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
                 return false;
             }
             hasDirectorBody = true;
+        } else if (key == "incident_emit_enabled") {
+            if (hasIncidentEmitEnabled || !boolean(output.incidentEmitEnabled)) {
+                return false;
+            }
+            hasIncidentEmitEnabled = true;
+        } else if (key == "incident_target") {
+            std::uint64_t value = 0;
+            if (hasIncidentTarget || !unsigned_integer(value) || value > 0xFFFFFFFFULL) {
+                return false;
+            }
+            output.incidentTarget = static_cast<std::uint32_t>(value);
+            hasIncidentTarget = true;
+        } else if (key == "incident_sweep_enabled") {
+            if (hasIncidentSweepEnabled || !boolean(output.incidentSweepEnabled)) {
+                return false;
+            }
+            hasIncidentSweepEnabled = true;
         } else if (!skip_value(0)) {
             return false;
         }

@@ -125,6 +125,20 @@ struct ActivityDefaults final {
     bool commandSweepEnabled{};
     std::uint64_t commandSweepValue{};
     /**
+     * Incident emitter (message type 19). Unlike the sense_update command (type 6), which the client
+     * rejects inbound as "unknown message type", an incident is a server->client gameplay-event
+     * trigger the client consumes: its 13-bit primary target indexes the 7,763-record global handler
+     * table (spawn rules, spawn sets, encounter directives), which is how the deleted mission
+     * director drove spawns/doors/VO. When enabled, each keepalive appends one incident naming
+     * `incidentTarget`. With incidentSweepEnabled the target advances by one every send, so one
+     * session walks the target space while the witness log correlates the target that produced an
+     * effect. Poison (795/4690/5375) and out-of-range (>7762) targets are dropped by the encoder.
+     * Off by default.
+     */
+    bool incidentEmitEnabled{};
+    std::uint32_t incidentTarget{};
+    bool incidentSweepEnabled{};
+    /**
      * Exit-3 auth bodies for two objects the mission mounts natively but that Sunrise leaves
      * bodyless: the activity-script authority (slot type 18, schema 0x80809919) and the mission
      * director (slot type 35, schema 0x808099BF), which share the validity-window block 0x808099C4.

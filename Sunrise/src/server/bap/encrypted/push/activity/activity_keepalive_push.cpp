@@ -16,6 +16,7 @@
 #include "activity_arrival.h"
 #include "activity_command_push.h"
 #include "activity_global_state_push.h"
+#include "activity_incident_push.h"
 #include "activity_membership_push.h"
 #include "activity_roster_push.h"
 #include "internal.h"
@@ -289,6 +290,12 @@ bool consume_activity_keepalive(Session& session,
     // applies the roster and its epoch before the command that references them. No-op unless the
     // activity defaults enable it.
     published = append_command_notification(
+                    session, scratch, key, nextSendNonce, scratch.framed, framedSize)
+                || published;
+    // An optional server->client incident (message type 19) rides the same frame. Unlike the type-6
+    // command the client discards, an incident is a gameplay-event trigger the client consumes, so
+    // this is the route that can drive a spawn. No-op unless the activity defaults enable it.
+    published = append_incident_notification(
                     session, scratch, key, nextSendNonce, scratch.framed, framedSize)
                 || published;
 
