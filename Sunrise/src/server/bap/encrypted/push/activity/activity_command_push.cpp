@@ -62,11 +62,14 @@ std::atomic<std::uint32_t> g_sweepIndex{0};
 [[nodiscard]] bool write_sweep_body(bits::Writer& writer,
                                     const patch_epoch::PatchEpoch& epoch,
                                     std::uint32_t index,
-                                    std::uint64_t nested) noexcept {
+                                    std::uint32_t field1,
+                                    std::uint64_t extra) noexcept {
+    // Record after the delta-present bit: field0 (13, the swept index), field1 (5, the swept action),
+    // flag2/flag3/field4 (1+1+9) authored from extra's low 11 bits.
+    const std::uint32_t nested = ((field1 & 0x1FU) << 11) | (static_cast<std::uint32_t>(extra) & 0x7FFU);
     return writer.write(epoch.first, sense::kEpochFieldWidth)
            && writer.write(epoch.second, sense::kEpochFieldWidth) && writer.write(1U, 1)
-           && writer.write(index & 0x1FFFU, 13)
-           && writer.write(static_cast<std::uint32_t>(nested & 0xFFFFU), 16);
+           && writer.write(index & 0x1FFFU, 13) && writer.write(nested & 0xFFFFU, 16);
 }
 
 } // namespace
@@ -95,17 +98,21 @@ bool append_command_notification(Session& session,
     const std::size_t count = settings.commandBodyCount <= settings.commandBody.size()
                                   ? settings.commandBodyCount
                                   : settings.commandBody.size();
-    // One sweep index per send, captured once so both encode passes agree.
+    // One sweep step per send, captured once so both encode passes agree. The 2D sweep walks the
+    // 13-bit field0 (index, 0..511) as the fast axis and the 5-bit field1 (action, 0..31) as the slow
+    // axis, so one session covers every (index, action) pair over the 512-index roster range.
     const bool sweep = settings.commandSweepEnabled;
-    const std::uint32_t sweepIndex =
-        sweep ? (g_sweepIndex.fetch_add(1, std::memory_order_relaxed) & 0x1FFFU) : 0;
+    const std::uint32_t sweepCounter =
+        sweep ? g_sweepIndex.fetch_add(1, std::memory_order_relaxed) : 0;
+    const std::uint32_t sweepIndex = sweepCounter % 512U;
+    const std::uint32_t sweepField1 = (sweepCounter / 512U) % 32U;
 
     // Measure, then write, the same two-pass contract the roster encoder uses, so a body that does
     // not fit leaves no partial bytes behind.
     bits::Writer measure = bits::Writer::measuring();
     std::size_t requiredSize = 0;
     const bool measured =
-        sweep ? write_sweep_body(measure, session.activityPatchEpoch.value, sweepIndex,
+        sweep ? write_sweep_body(measure, session.activityPatchEpoch.value, sweepIndex, sweepField1,
                                  settings.commandSweepValue)
               : write_command_body(measure, session.activityPatchEpoch.value,
                                    settings.commandBody.data(), count);
@@ -115,7 +122,7 @@ bool append_command_notification(Session& session,
     bits::Writer writer(scratch.responseBody);
     std::size_t messageSize = 0;
     const bool wrote =
-        sweep ? write_sweep_body(writer, session.activityPatchEpoch.value, sweepIndex,
+        sweep ? write_sweep_body(writer, session.activityPatchEpoch.value, sweepIndex, sweepField1,
                                  settings.commandSweepValue)
               : write_command_body(writer, session.activityPatchEpoch.value,
                                    settings.commandBody.data(), count);
@@ -152,12 +159,13 @@ bool append_command_notification(Session& session,
         int used = std::snprintf(line.data(),
                                  line.size(),
                                  "ev=gameplay stage=command result=%s bytes=%zu steps=%zu sweep=%d "
-                                 "index=%u hex=",
+                                 "index=%u field1=%u hex=",
                                  encoded ? "ok" : "fail",
                                  encoded ? messageSize : 0,
                                  count,
                                  sweep ? 1 : 0,
-                                 sweepIndex);
+                                 sweepIndex,
+                                 sweepField1);
         for (std::size_t index = 0; encoded && index < messageSize && used > 0
                                     && static_cast<std::size_t>(used) + 3 < line.size();
              ++index) {
