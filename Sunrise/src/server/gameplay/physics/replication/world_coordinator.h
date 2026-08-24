@@ -121,6 +121,18 @@ public:
                                                   interest::Evaluation& output) noexcept;
 
     /**
+     * Diagnostic peer-populate for the encode probe. Publishes every live coordinator actor to the
+     * planner directly, the same publish_actor step synchronize_peer applies, minus the spatial
+     * interest cull that needs a real PeerView. This lets prepare_frame see pending creates so the
+     * frame and its type codec can be exercised offline. Idempotent across ticks (publish_actor
+     * refreshes an existing record). Not a shipping path: it publishes without interest, so it must
+     * never gate a real send.
+     * @param peer Exact registered planner object.
+     * @return Number of live coordinator actors published (0 on any precondition failure).
+     */
+    [[nodiscard]] std::size_t probe_publish_actors(PeerState& peer) noexcept;
+
+    /**
      * Builds one frame and attaches its common/entity owners to a packet.
      * @param peer Exact registered planner object.
      * @param commonState Exact common state for the same ActivityClient lifetime.

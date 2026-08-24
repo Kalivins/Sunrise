@@ -439,6 +439,12 @@ void tick_bound(Storage& table, std::size_t slot, std::uint64_t now) noexcept {
     static std::uint64_t probeGeneration = 0;  // Worker-thread only; a plain counter is enough.
     const replication::WorldReconcileResult reconciled =
         table.coordinators[slot].reconcile(snapshot);
+    // Populate the planner from the reconciled coordinator actors. synchronize_peer would do this
+    // through an interest pass, but that needs a real spatial PeerView; the probe has none, so it
+    // publishes every live actor directly. Without this the planner stays empty and prepare_next
+    // returns idle (the observed stall: coord_actors>0 but entity=0).
+    const std::size_t published =
+        table.coordinators[slot].probe_publish_actors(*probeServices.replication);
     replication::FrameContribution contribution{};
     const std::uint64_t packetGeneration = ++probeGeneration;
     // Drive a SQUAD entity payload (type 1) so the probe exercises the recovered squad baseline
@@ -450,8 +456,9 @@ void tick_bound(Storage& table, std::size_t slot, std::uint64_t now) noexcept {
         table.coordinators[slot].prepare_frame(*probeServices.replication, *probeServices.common,
                                                packetGeneration, &squadPlan, contribution);
     report(core::log::Level::info,
-           "ev=physics stage=replicate reconcile=%u coord_actors=%zu frame=%u common=%d entity=%d",
-           static_cast<unsigned>(reconciled), table.coordinators[slot].actor_count(),
+           "ev=physics stage=replicate reconcile=%u coord_actors=%zu published=%zu frame=%u "
+           "common=%d entity=%d",
+           static_cast<unsigned>(reconciled), table.coordinators[slot].actor_count(), published,
            static_cast<unsigned>(framed), contribution.commonPresent ? 1 : 0,
            contribution.entityPresent ? 1 : 0);
     if (framed == replication::FramePrepareResult::ready

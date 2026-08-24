@@ -198,6 +198,25 @@ PeerSyncResult WorldCoordinator::synchronize_peer(interest::InterestManager& man
     return changed ? PeerSyncResult::applied : PeerSyncResult::unchanged;
 }
 
+/** Publishes every live coordinator actor to one planner directly, skipping the interest cull. */
+std::size_t WorldCoordinator::probe_publish_actors(PeerState& peer) noexcept {
+    const std::size_t peerSlot = find_peer(peer);
+    if (!healthy_ || !bound_ || peerSlot >= peers_.size() || !context_is_current()
+        || peers_[peerSlot].planner != &peer || !exact_planner_ownership(peer)) {
+        return 0;
+    }
+    std::size_t published = 0;
+    for (const ActorRecord& actor : actors_) {
+        if (!actor.occupied || !actor.live) {
+            continue;
+        }
+        if (publish_actor(peer, actor.projected)) {
+            ++published;
+        }
+    }
+    return published;
+}
+
 /** Retires remove-queued allocations only after every exact State owner drains. */
 std::size_t WorldCoordinator::retire_drained() noexcept {
     if (!healthy_ || !bound_ || !context_is_current()) {
