@@ -9,6 +9,22 @@ namespace {
 
 namespace external = middleware::gameplay::external;
 
+/**
+ * Squad entity baseline wire schema, recovered by emulating the client's per-type decoder
+ * (handler vtable[0x60] -> generic deserializer 0x4c74b0 with schema class 0x80809c42): three fixed
+ * scalar fields, MSB-first, no presence bits or nesting. field0 is the squad definition reference,
+ * field1 a small index (squad_ikora's is 91), field2 state. Values are the current best candidates;
+ * they are witnessed by the encode probe and refined once a send path exists.
+ */
+inline constexpr std::uint8_t kSquadField0Width = 32;
+inline constexpr std::uint8_t kSquadField1Width = 7;
+inline constexpr std::uint8_t kSquadField2Width = 16;
+inline constexpr std::size_t kSquadBaselineBits =
+    kSquadField0Width + kSquadField1Width + kSquadField2Width;
+inline constexpr std::uint32_t kSquadField0 = 0x811C9DC5;
+inline constexpr std::uint32_t kSquadField1 = 91;
+inline constexpr std::uint32_t kSquadField2 = 0;
+
 /** Resolves the only type supported by the empty scriptless payload. */
 [[nodiscard]] bool resolve_scriptless_type(const void* context,
                                            const external::EntityToken& token,
@@ -28,6 +44,28 @@ namespace external = middleware::gameplay::external;
                                            external::TypePayload& output) noexcept {
     static_cast<void>(context);
     static_cast<void>(token);
+    if (type == external::EntityType::squad) {
+        output = {};
+        if (part != external::TypePayloadPart::baseline) {
+            return true;
+        }
+        std::uint64_t f0 = 0;
+        std::uint64_t f1 = 0;
+        std::uint64_t f2 = 0;
+        if (!reader.read(kSquadField0Width, f0) || !reader.read(kSquadField1Width, f1)
+            || !reader.read(kSquadField2Width, f2)) {
+            return false;
+        }
+        // Capture the three fields into callback state (f0 as u32, f1 as u8, f2 as u16 = 7 bytes).
+        for (std::size_t index = 0; index < 4; ++index) {
+            output.state[index] = static_cast<std::byte>((f0 >> (index * 8)) & 0xFF);
+        }
+        output.state[4] = static_cast<std::byte>(f1 & 0xFF);
+        output.state[5] = static_cast<std::byte>(f2 & 0xFF);
+        output.state[6] = static_cast<std::byte>((f2 >> 8) & 0xFF);
+        output.byteCount = 7;
+        return true;
+    }
     static_cast<void>(part);
     static_cast<void>(reader);
     if (type != external::EntityType::sobject) {
@@ -46,6 +84,15 @@ namespace external = middleware::gameplay::external;
                                             middleware::encoding::bits::Writer& writer) noexcept {
     static_cast<void>(context);
     static_cast<void>(token);
+    if (type == external::EntityType::squad) {
+        // The squad baseline is the three-field schema; the update part carries nothing here.
+        if (part != external::TypePayloadPart::baseline) {
+            return true;
+        }
+        return writer.write(kSquadField0, kSquadField0Width)
+               && writer.write(kSquadField1, kSquadField1Width)
+               && writer.write(kSquadField2, kSquadField2Width);
+    }
     static_cast<void>(part);
     static_cast<void>(writer);
     return type == external::EntityType::sobject && payload.byteCount == 0;
@@ -216,7 +263,7 @@ const middleware::gameplay::external::TypePayloadCodec& scriptless_payload_codec
         &resolve_scriptless_type,
         &read_scriptless_payload,
         &write_scriptless_payload,
-        0,
+        kSquadBaselineBits,
         0,
     };
     return codec;

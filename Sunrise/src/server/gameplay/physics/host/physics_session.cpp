@@ -441,9 +441,14 @@ void tick_bound(Storage& table, std::size_t slot, std::uint64_t now) noexcept {
         table.coordinators[slot].reconcile(snapshot);
     replication::FrameContribution contribution{};
     const std::uint64_t packetGeneration = ++probeGeneration;
+    // Drive a SQUAD entity payload (type 1) so the probe exercises the recovered squad baseline
+    // schema through the encode path, not just the empty sobject fallback. The write callback emits
+    // the 55-bit baseline; nothing is sent, so this witnesses whether a squad frame builds+encodes.
+    replication::EntityPayloadPlan squadPlan{};
+    squadPlan.type = middleware::gameplay::external::EntityType::squad;
     const replication::FramePrepareResult framed =
         table.coordinators[slot].prepare_frame(*probeServices.replication, *probeServices.common,
-                                               packetGeneration, nullptr, contribution);
+                                               packetGeneration, &squadPlan, contribution);
     report(core::log::Level::info,
            "ev=physics stage=replicate reconcile=%u coord_actors=%zu frame=%u common=%d entity=%d",
            static_cast<unsigned>(reconciled), table.coordinators[slot].actor_count(),
