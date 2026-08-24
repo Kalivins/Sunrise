@@ -80,6 +80,7 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
     bool hasIncidentEmitEnabled = false;
     bool hasIncidentTarget = false;
     bool hasIncidentSweepEnabled = false;
+    bool hasIncidentBlockSize = false;
     if (consume('}')) {
         return true;
     }
@@ -209,6 +210,14 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
                 return false;
             }
             hasIncidentSweepEnabled = true;
+        } else if (key == "incident_block_size") {
+            std::uint64_t value = 0;
+            if (hasIncidentBlockSize || !unsigned_integer(value) || value == 0
+                || value > 0xFFFFFFFFULL) {
+                return false;
+            }
+            output.incidentBlockSize = static_cast<std::uint32_t>(value);
+            hasIncidentBlockSize = true;
         } else if (!skip_value(0)) {
             return false;
         }

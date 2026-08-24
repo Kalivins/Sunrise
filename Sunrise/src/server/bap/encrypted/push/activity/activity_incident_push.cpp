@@ -2,6 +2,7 @@
 
 #include <Windows.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -25,46 +26,26 @@ namespace incident = middleware::bap::activity_message::incident;
 namespace bits = middleware::encoding::bits;
 namespace defaults = state::activity::defaults;
 
-/** Advancing target for the incident sweep, one step per emitted incident. */
+/** Advancing base for the incident sweep, one step per emitted incident (block-aware). */
 std::atomic<std::uint32_t> g_incidentSweep{0};
 
-} // namespace
+/** Ceiling on incidents staged in one keepalive, so a block sweep cannot exhaust the frame buffer. */
+constexpr std::uint32_t kMaxIncidentsPerSend = 128;
 
-/** Appends one server->client incident notification when the activity defaults enable it. */
-bool append_incident_notification(Session& session,
-                                  Scratch& scratch,
-                                  std::span<const std::byte, state::kAesKeySize> key,
-                                  std::array<std::byte, state::kBapNonceSize>& nonce,
-                                  std::span<std::byte> response,
-                                  std::size_t& written) noexcept {
-    if (written > response.size()) {
-        return false;
-    }
-    defaults::ActivityDefaults settings{};
-    defaults::snapshot(settings);
-    if (!settings.incidentEmitEnabled) {
-        return false;
-    }
-    // Send only once the client is fully established: the patch epoch binds after the roster is
-    // received and applied, the same readiness the client showed when it accepted (and rejected) a
-    // type-6 command. An incident sent earlier reaches a client not yet in the activity.
-    if (!session.activityPatchEpoch.seen
-        || session.activityPatchEpoch.bindingGeneration != session.activity.bindingGeneration) {
-        return false;
-    }
-
-    // One target per send, captured once so both encode passes agree. The sweep advances the target
-    // so a single session walks the space; a fixed target repeats one index.
-    const std::uint32_t sweepStep =
-        settings.incidentSweepEnabled ? g_incidentSweep.fetch_add(1, std::memory_order_relaxed) : 0;
-    const std::uint32_t target = settings.incidentTarget + sweepStep;
-
+/**
+ * Stages one incident frame for `target`, advancing nonce and written only when the whole frame fits.
+ * @return True when a frame was staged; false when the target is dropped by the encoder or nothing fit.
+ */
+[[nodiscard]] bool emit_one(Session& session,
+                            Scratch& scratch,
+                            std::span<const std::byte, state::kAesKeySize> key,
+                            std::array<std::byte, state::kBapNonceSize>& nonce,
+                            std::span<std::byte> response,
+                            std::size_t& written,
+                            std::uint32_t target) noexcept {
     incident::Incident body{};
     body.primaryTarget = target;
 
-    // Measure, then write, the same two-pass contract the roster encoder uses, so a body that does
-    // not fit leaves no partial bytes behind. incident::write drops poison and out-of-range targets,
-    // so nothing is staged for a target the client cannot safely resolve.
     bits::Writer measure = bits::Writer::measuring();
     std::size_t requiredSize = 0;
     if (!incident::write(measure, body) || !measure.finish(requiredSize)
@@ -98,32 +79,71 @@ bool append_incident_notification(Session& session,
         written = initialWritten;
         nonce = initialNonce;
     }
+    SecureZeroMemory(scratch.responseBody.data(), messageSize);
+    SecureZeroMemory(&initialNonce, sizeof initialNonce);
+    return encoded;
+}
 
-    // Witness: the emitted target and body bytes, so a target that produced an in-game effect can be
-    // read back from the log and a client that rejects a well-formed incident is told apart from one
-    // that never received it.
+} // namespace
+
+/** Appends server->client incident notification(s) when the activity defaults enable it. */
+bool append_incident_notification(Session& session,
+                                  Scratch& scratch,
+                                  std::span<const std::byte, state::kAesKeySize> key,
+                                  std::array<std::byte, state::kBapNonceSize>& nonce,
+                                  std::span<std::byte> response,
+                                  std::size_t& written) noexcept {
+    if (written > response.size()) {
+        return false;
+    }
+    defaults::ActivityDefaults settings{};
+    defaults::snapshot(settings);
+    if (!settings.incidentEmitEnabled) {
+        return false;
+    }
+    // Send only once the client is fully established: the patch epoch binds after the roster is
+    // received and applied, the same readiness the client showed when it accepted (and rejected) a
+    // type-6 command. An incident sent earlier reaches a client not yet in the activity.
+    if (!session.activityPatchEpoch.seen
+        || session.activityPatchEpoch.bindingGeneration != session.activity.bindingGeneration) {
+        return false;
+    }
+
+    // A fixed target sends once; a sweep sends a block of consecutive targets and advances the base
+    // by the block so the next keepalive continues where this one stopped. The base is captured once.
+    const std::uint32_t blockSize =
+        settings.incidentSweepEnabled
+            ? std::min(std::max(settings.incidentBlockSize, 1U), kMaxIncidentsPerSend)
+            : 1U;
+    const std::uint32_t sweepBase =
+        settings.incidentSweepEnabled
+            ? g_incidentSweep.fetch_add(blockSize, std::memory_order_relaxed)
+            : 0U;
+
+    std::uint32_t staged = 0;
+    std::uint32_t firstTarget = settings.incidentTarget + sweepBase;
+    std::uint32_t lastTarget = firstTarget;
+    for (std::uint32_t index = 0; index < blockSize; ++index) {
+        const std::uint32_t target = settings.incidentTarget + sweepBase + index;
+        if (emit_one(session, scratch, key, nonce, response, written, target)) {
+            ++staged;
+            lastTarget = target;
+        }
+    }
+
+    // Witness: the block range and how many frames were staged, so an on-screen effect can be mapped
+    // to the keepalive's target block; a block of one logs the single target for the fine sweep.
     if (core::log::accepts(core::log::Channel::server, core::log::Level::debug)) {
         std::array<char, core::log::kLineCapacity> line{};
-        int used = std::snprintf(line.data(),
-                                 line.size(),
-                                 "ev=gameplay stage=incident result=%s target=%u bytes=%zu hex=",
-                                 encoded ? "ok" : "fail",
-                                 target,
-                                 encoded ? messageSize : 0);
-        for (std::size_t index = 0; encoded && index < messageSize && used > 0
-                                    && static_cast<std::size_t>(used) + 3 < line.size();
-             ++index) {
-            const int printed =
-                std::snprintf(line.data() + used,
-                              line.size() - static_cast<std::size_t>(used),
-                              "%02x",
-                              static_cast<unsigned>(
-                                  std::to_integer<unsigned char>(scratch.responseBody[index])));
-            if (printed <= 0) {
-                break;
-            }
-            used += printed;
-        }
+        const int used = std::snprintf(
+            line.data(),
+            line.size(),
+            "ev=gameplay stage=incident result=%s block_start=%u block_size=%u staged=%u last=%u",
+            staged > 0 ? "ok" : "fail",
+            firstTarget,
+            blockSize,
+            staged,
+            lastTarget);
         if (used > 0) {
             core::log::write(core::log::Channel::server,
                              core::log::Level::debug,
@@ -131,9 +151,7 @@ bool append_incident_notification(Session& session,
         }
     }
 
-    SecureZeroMemory(scratch.responseBody.data(), messageSize);
-    SecureZeroMemory(&initialNonce, sizeof initialNonce);
-    return encoded;
+    return staged > 0;
 }
 
 } // namespace sunrise::server::bap::encrypted::push::activity

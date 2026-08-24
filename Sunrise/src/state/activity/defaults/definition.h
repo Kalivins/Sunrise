@@ -134,10 +134,16 @@ struct ActivityDefaults final {
      * session walks the target space while the witness log correlates the target that produced an
      * effect. Poison (795/4690/5375) and out-of-range (>7762) targets are dropped by the encoder.
      * Off by default.
+     *
+     * `incidentBlockSize` (>=1, clamped) makes each sweep send fire that many CONSECUTIVE targets in
+     * one keepalive instead of one, so a session covers the 7,763-target space densely: watch for an
+     * on-screen effect, note the keepalive it landed on, then re-run with block size 1 over that
+     * block to pin the exact target. Ignored when the sweep is off (a fixed target sends once).
      */
     bool incidentEmitEnabled{};
     std::uint32_t incidentTarget{};
     bool incidentSweepEnabled{};
+    std::uint32_t incidentBlockSize{1};
     /**
      * Exit-3 auth bodies for two objects the mission mounts natively but that Sunrise leaves
      * bodyless: the activity-script authority (slot type 18, schema 0x80809919) and the mission
