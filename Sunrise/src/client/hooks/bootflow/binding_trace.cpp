@@ -27,10 +27,8 @@ constexpr std::string_view kCreatorText =
 /** Compiled pattern bytes of the signature text above. */
 constexpr auto kCreator = signature<signature_length(kCreatorText)>(kCreatorText);
 
-/** Distinct receiver objects to dump before the trace goes quiet. */
+/** Distinct receiver objects to report before the trace goes quiet. */
 constexpr std::size_t kSeenCap = 12;
-/** Leading bytes of the receiver to dump, enough to cover the registry key and near fields. */
-constexpr std::size_t kDumpBytes = 0x30;
 
 hooking::detour::Handle g_handle{};
 std::array<std::atomic<std::uintptr_t>, kSeenCap> g_seen{};
@@ -59,30 +57,23 @@ using Original = void(__fastcall*)(void*, void*, void*, void*, void*);
 
 /** Dumps the receiver and content pointers, then forwards to the native binding creator. */
 __declspec(noinline) void __fastcall creator(void* rcx, void* rdx, void* r8, void* r9, void* stack5) noexcept {
+    // Log only the pointers -- never dereference the receiver. During load this hook fires with a
+    // not-yet-constructed object, so reading its bytes faults and freezes the client; the sweep only
+    // needs to know that a bind (a content load) happened, which the pointers alone report.
     void* const receiver = r9;
     void* const content = r8;
     if (receiver != nullptr && claim(reinterpret_cast<std::uintptr_t>(receiver))) {
-        std::array<char, core::log::kLineCapacity> line{};
-        int used = std::snprintf(line.data(),
-                                 line.size(),
-                                 "ev=bindtrace stage=bind obj=0x%llX content=0x%llX bytes=",
-                                 static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(receiver)),
-                                 static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(content)));
-        const auto* raw = static_cast<const unsigned char*>(receiver);
-        for (std::size_t index = 0;
-             index < kDumpBytes && used > 0 && static_cast<std::size_t>(used) + 3 < line.size();
-             ++index) {
-            const int printed = std::snprintf(
-                line.data() + used, line.size() - static_cast<std::size_t>(used), "%02x", raw[index]);
-            if (printed <= 0) {
-                break;
-            }
-            used += printed;
-        }
-        if (used > 0) {
+        std::array<char, 96> line{};
+        const int written = std::snprintf(
+            line.data(),
+            line.size(),
+            "ev=bindtrace stage=bind obj=0x%llX content=0x%llX",
+            static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(receiver)),
+            static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(content)));
+        if (written > 0) {
             core::log::write(core::log::Channel::client,
                              core::log::Level::info,
-                             {line.data(), static_cast<std::size_t>(used)});
+                             {line.data(), static_cast<std::size_t>(written)});
         }
     }
     reinterpret_cast<Original>(g_handle.original)(rcx, rdx, r8, r9, stack5);
