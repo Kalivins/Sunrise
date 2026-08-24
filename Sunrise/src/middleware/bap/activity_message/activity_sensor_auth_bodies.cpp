@@ -43,11 +43,10 @@ constexpr std::uint8_t kSpawnOverrideIndexWidth = 10;
 constexpr std::uint32_t kSpawnOverrideIndexBias = 1;
 /** Type 67 maps the 32 spawn-key ordinals to themselves, matching its constructor. */
 constexpr std::size_t kSpawnKeyCount = 32;
-/** Type 1 (squad) placement 0x80807ec9 body: field 0 present as a slot reference (presence + key +
- * type + index) so the consumer lookup resolves and [rdi] != 0 fires the placement branch, then 17
- * absent optionals, the 2-bit and 3-bit fixed fields, and one absent optional. */
-constexpr std::size_t kSquadBodyBits =
-    kPresenceWidth + 32 + kSlotTypeWidth + kSlotIndexWidth + 17 + 2 + 3 + kPresenceWidth;
+/** Type 1 (squad) minimal 0x80807ec9 body (M1 first pass): every optional absent, so the client
+ * instantiates the squad from its own authored placement instead of a body-carried one. 18 presence
+ * bits, a 2-bit and a 3-bit fixed field, then one presence bit. */
+constexpr std::size_t kSquadBodyBits = 18 + 2 + 3 + 1;
 
 /**
  * Writes the participation body, which binds the player and latches the region. Zero-fill is not
@@ -217,17 +216,12 @@ bool write_auth_body(bits::Writer& writer,
     } else if (slotType == kSlotTypeSpawnKeys) {
         encoded = write_spawn_keys(writer);
     } else if (slotType == kSlotTypeSquad && snapshot.squadPlaceEnabled) {
-        // Placement 0x80807ec9 body: field 0 present as a slot reference keyed to the squad object,
-        // so the consumer's lookup (0x1703e70) resolves it and the first-field read at 0x1703da7
-        // ([rdi] != 0) drives the placement branch (0x16fe700) rather than the empty else path. The
-        // minimal body (field 0 absent) is accepted with no desync but never places; this presents
-        // the trigger field. Remaining 17 optionals absent, the 2-bit/3-bit fixed fields carry
-        // squadPlaceValue, and the last optional stays absent.
-        encoded = writer.write(1, kPresenceWidth)
-                  && writer.write(snapshot.squadPlaceKey, 32)
-                  && writer.write(kSlotTypeBias + kSlotTypeSquad, kSlotTypeWidth)
-                  && writer.write(snapshot.squadPlaceIndex + kSlotIndexBias, kSlotIndexWidth);
-        for (std::size_t index = 0; encoded && index < 17; ++index) {
+        // Minimal 0x80807ec9 body (M1 first pass): every optional absent so the client instantiates
+        // the squad from its own authored placement (position and combatant carried by the content),
+        // not from a body-supplied one. 18 absent optionals, the 2-bit and 3-bit fixed fields carry
+        // squadPlaceValue, then one absent optional. Consistent with the client schema, so no desync;
+        // the question this answers is whether a seeded squad slot with a valid body instantiates.
+        for (std::size_t index = 0; encoded && index < 18; ++index) {
             encoded = writer.write(0, kPresenceWidth);
         }
         encoded = encoded && writer.write(snapshot.squadPlaceValue & 0x3U, 2)

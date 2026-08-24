@@ -16,6 +16,12 @@ namespace tables = middleware::content::packages::tables;
 /** How many hops the chain from a handle to a descriptor blob may take. */
 constexpr std::size_t kChainDepthLimit = 8;
 
+/** Squad slot type, and how many squad slots of the full group get an auth body on the M1 first
+ *  pass. Capped so a seeded squad-parent instantiates a handful of squads to prove the mechanism,
+ *  not every squad the mission declares at once. */
+constexpr std::uint8_t kSquadSlotType = 1;
+constexpr unsigned kSquadAuthLimit = 4;
+
 /**
  * SCOPED SENSOR PROBE (diagnostic). Chosen's sensor/squad objects (type-30 slots) that the roster
  * whitelist does not admit on its own. Admitting them by exact registry key keeps the extraction
@@ -308,6 +314,7 @@ bool resolve_object(const reader::Source& source,
         // what stops the bubble from holding. Seed-only (flags 0): auth bodies that actually instantiate
         // a squad come in a later step; here the goal is only that the parent seeds without a hold.
         built = declared.count > 0 && declared.count <= layouts::kRosterSlotCapacity;
+        unsigned squadBodies = 0;
         for (std::uint64_t index = 0; built && index < declared.count; ++index) {
             tables::Slot declaredSlot{};
             if (!tables::object_slot_at(storage.object, declared, index, declaredSlot)
@@ -316,7 +323,15 @@ bool resolve_object(const reader::Source& source,
                 break;
             }
             candidate.slotTypes[index] = static_cast<std::uint8_t>(declaredSlot.type);
-            candidate.slotFlags[index] = 0;
+            // M1: give the auth flag to the first few squad slots so the snapshot writes each a body
+            // that asks the client to instantiate it. Every other slot stays seed-only, and the cap
+            // keeps the first pass to a handful of squads rather than the whole mission at once.
+            std::uint8_t flags = 0;
+            if (declaredSlot.type == kSquadSlotType && squadBodies < kSquadAuthLimit) {
+                flags = layouts::kSlotAuthFlag;
+                ++squadBodies;
+            }
+            candidate.slotFlags[index] = flags;
             candidate.slotIndices[index] = static_cast<std::uint16_t>(index);
         }
         if (built) {
