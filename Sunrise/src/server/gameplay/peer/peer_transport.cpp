@@ -3,6 +3,8 @@
 #include <Windows.h>
 
 #include <array>
+#include <cstddef>
+#include <cstdio>
 
 #include "../../../middleware/crypto/random_bytes.h"
 #include "../../../middleware/encoding/bit_reader.h"
@@ -623,18 +625,38 @@ void consume_established(const gp::Endpoint& from,
     // Measure it read-only and sampled, tracking the running max, to learn whether any packet carries
     // a substantial external body. Nothing here changes the grammar or any state.
     if (core::settings::get().server.activation.reconstructMissionPolicy) {
-        static std::uint64_t externalProbeCount = 0;
-        static std::size_t externalBitsMax = 0;
+        static std::uint64_t probeTotal = 0;
+        static std::uint64_t probeWithBody = 0;  // packets whose external region exceeds byte padding
+        static std::size_t probeMaxBits = 0;
         const std::size_t payloadBits = payload.size() * 8U;
         const std::size_t externalBits =
             payloadBits > packet.externalBitOffset ? payloadBits - packet.externalBitOffset : 0U;
-        if (externalBits > externalBitsMax) {
-            externalBitsMax = externalBits;
+        ++probeTotal;
+        if (externalBits > probeMaxBits) {
+            probeMaxBits = externalBits;
         }
-        if ((externalProbeCount++ % 30U) == 0U) {
+        if (externalBits >= 8U) {
+            ++probeWithBody;
+            // Dump the external region so an empty reciprocated frame (~9 bits) is told apart from a
+            // real common root (~200 bits). Hex starts at the byte holding externalBitOffset.
+            const std::size_t startByte = packet.externalBitOffset / 8U;
+            std::array<char, 40> hex{};
+            std::size_t used = 0;
+            for (std::size_t i = 0; i < 12U && startByte + i < payload.size() && used + 3 < hex.size();
+                 ++i) {
+                used += static_cast<std::size_t>(std::snprintf(
+                    hex.data() + used, hex.size() - used, "%02X",
+                    std::to_integer<unsigned>(payload[startByte + i])));
+            }
             report(core::log::Level::info,
-                   "ev=gameplay stage=external_probe ext_bits=%zu ext_max=%zu payload_bits=%zu",
-                   externalBits, externalBitsMax, payloadBits);
+                   "ev=gameplay stage=ext_body bits=%zu off=%zu payload_bits=%zu hex=%s",
+                   externalBits, packet.externalBitOffset, payloadBits, hex.data());
+        }
+        if ((probeTotal % 60U) == 0U) {
+            report(core::log::Level::info,
+                   "ev=gameplay stage=external_probe total=%llu with_body=%llu max_bits=%zu",
+                   static_cast<unsigned long long>(probeTotal),
+                   static_cast<unsigned long long>(probeWithBody), probeMaxBits);
         }
     }
     std::array<std::uint8_t, kMessageReportCapacity> delivered{};
