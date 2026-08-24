@@ -9,8 +9,10 @@
 #include <string>
 
 #include "../../../../core/settings/settings.h"
+#include "../../../../middleware/gameplay/external/common_state.h"
 #include "../../../../state/activity/entity_slots/runtime.h"
 #include "../../../../state/gameplay/physics/runtime.h"
+#include "../common/common_sync.h"
 #include "../../gameplay_log.h"
 #include "../../group/group_host.h"
 #include "../../group/group_host_sessions.h"
@@ -23,6 +25,40 @@ namespace sunrise::server::gameplay::physics::host::session {
 namespace {
 
 namespace replica = state::gameplay::physics;
+
+/**
+ * Drives one freshly bound common state to Phase::confirmed with a synthetic, binding-matching common
+ * root, so the encode probe can pass prepare_frame's common-ready gate. The real handshake
+ * (common::observe fed by inbound patch-epoch / type-52 traffic) has no caller yet; this substitutes
+ * it locally. Nothing is transmitted, so the fabricated root never reaches the client -- it only lets
+ * a squad frame BUILD and ENCODE. Acts only on an awaitingObservation state; a confirmed one is left
+ * alone, so it is idempotent across ticks and a real bind resets it for the next drive.
+ * @return True when the state is confirmed (already, or after this drive).
+ */
+[[nodiscard]] bool probe_confirm_common(common::State& state) noexcept {
+    if (common::ready(state)) {
+        return true;
+    }
+    if (state.phase != common::Phase::awaitingObservation
+        || state.binding.activitySessionId == 0) {
+        return false;
+    }
+    middleware::gameplay::external::CommonState root{};
+    root.patchEpoch = state.binding.patchEpoch;
+    root.entries[0].activitySessionId = state.binding.activitySessionId;
+    root.entries[0].reconciliationGeneration = 0;
+    root.entryCount = 1;
+    if (common::observe(state, root) != common::ObserveResult::initial) {
+        return false;
+    }
+    common::AdvancePlan plan{};
+    if (!common::prepare_advance(state, plan) || !common::commit_advance(state, plan)) {
+        return false;
+    }
+    root.entries[0].reconciliationGeneration = plan.nextGeneration;
+    static_cast<void>(common::observe(state, root));
+    return common::ready(state);
+}
 
 /** Worlds this bridge holds open. The host bounds its own table at the same number. */
 constexpr std::size_t kSessionCapacity = kWorldCapacity;
@@ -445,6 +481,10 @@ void tick_bound(Storage& table, std::size_t slot, std::uint64_t now) noexcept {
     // returns idle (the observed stall: coord_actors>0 but entity=0).
     const std::size_t published =
         table.coordinators[slot].probe_publish_actors(*probeServices.replication);
+    // prepare_frame's first gate is common::ready (phase==confirmed). The common handshake that would
+    // confirm it (observe fed by inbound patch-epoch/type-52) has no caller yet, so drive it locally
+    // with a synthetic root. Nothing is sent, so this only unblocks the encode -- not a real send.
+    const bool commonReady = probe_confirm_common(*probeServices.common);
     replication::FrameContribution contribution{};
     const std::uint64_t packetGeneration = ++probeGeneration;
     // Drive a SQUAD entity payload (type 1) so the probe exercises the recovered squad baseline
@@ -456,11 +496,11 @@ void tick_bound(Storage& table, std::size_t slot, std::uint64_t now) noexcept {
         table.coordinators[slot].prepare_frame(*probeServices.replication, *probeServices.common,
                                                packetGeneration, &squadPlan, contribution);
     report(core::log::Level::info,
-           "ev=physics stage=replicate reconcile=%u coord_actors=%zu published=%zu frame=%u "
-           "common=%d entity=%d",
+           "ev=physics stage=replicate reconcile=%u coord_actors=%zu published=%zu common_ready=%d "
+           "frame=%u common=%d entity=%d",
            static_cast<unsigned>(reconciled), table.coordinators[slot].actor_count(), published,
-           static_cast<unsigned>(framed), contribution.commonPresent ? 1 : 0,
-           contribution.entityPresent ? 1 : 0);
+           commonReady ? 1 : 0, static_cast<unsigned>(framed),
+           contribution.commonPresent ? 1 : 0, contribution.entityPresent ? 1 : 0);
     if (framed == replication::FramePrepareResult::ready
         || framed == replication::FramePrepareResult::full) {
         // Encode witness (next rung of the drive). write_external_entity_frame has no caller in the
