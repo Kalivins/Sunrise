@@ -28,6 +28,8 @@ bool install() noexcept {
     const bool worldStep = install_world_step();
     const bool spawn = install_spawn_hold();
     const bool fade = install_fade_release();
+    // DIAGNOSTIC: not gated into the strict return, so a miss never fails the boot.
+    (void)install_binding_trace();
     const bool anyFix = hold || sliceSet || skip || composition || handoff || joinReady || ownerSlot
                         || regionPrivate || worldStep || spawn || fade;
     g_installed.store(anyFix, std::memory_order_release);
@@ -37,6 +39,7 @@ bool install() noexcept {
 
 /** Detaches every boot-step fix, in the reverse order of install. */
 void uninstall() noexcept {
+    uninstall_binding_trace();
     uninstall_fade_release();
     uninstall_spawn_hold();
     uninstall_world_step();

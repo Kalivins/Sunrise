@@ -110,6 +110,15 @@ void observe_world_step() noexcept;
 void uninstall_spawn_hold() noexcept;
 
 /**
+ * DIAGNOSTIC. Attaches the binding-creation trace, which logs the content-load trigger's RVA.
+ * @return True when the target is found and the detour attaches.
+ */
+[[nodiscard]] bool install_binding_trace() noexcept;
+
+/** Detaches the binding-creation trace. */
+void uninstall_binding_trace() noexcept;
+
+/**
  * Finds the world-transition fade release and its manager object.
  * Nothing is detoured: both are called, so a miss leaves the feature off, not the client changed.
  * @return True when both targets were found.
