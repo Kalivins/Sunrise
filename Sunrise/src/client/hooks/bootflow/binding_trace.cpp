@@ -29,8 +29,13 @@ constexpr auto kBindingTrace = signature<signature_length(kBindingTraceText)>(kB
 
 /** RVA of the traced function, used to recover the image base from the resolved target. */
 constexpr std::uintptr_t kBindingTraceRva = 0xc22dd0;
-
-/** Distinct caller sites to log before the trace goes quiet. */
+/** Main-image span, to tell a stack return address from other stack data. */
+constexpr std::uintptr_t kImageSpan = 0x8a5f000;
+/** Stack qwords to scan for the return-address chain. */
+constexpr std::size_t kStackScan = 96;
+/** Return addresses to record per chain. */
+constexpr std::size_t kChainDepth = 6;
+/** Distinct chains (keyed by the immediate caller RVA) to log before the trace goes quiet. */
 constexpr std::size_t kSeenCap = 24;
 
 hooking::detour::Handle g_handle{};
@@ -39,38 +44,51 @@ std::array<std::atomic<std::uint32_t>, kSeenCap> g_seen{};
 
 using Original = void(__fastcall*)(void*, void*, void*, void*);
 
-/** Logs one caller RVA the first time it is seen, ignoring repeats and losing races safely. */
-void report_caller(std::uint32_t rva) noexcept {
+/** @return True if the caller-RVA key is new and was claimed, false if already seen or table full. */
+[[nodiscard]] bool claim(std::uint32_t key) noexcept {
     std::size_t slot = 0;
     while (slot < kSeenCap) {
         const std::uint32_t seen = g_seen[slot].load(std::memory_order_relaxed);
-        if (seen == rva) {
-            return;
+        if (seen == key) {
+            return false;
         }
         if (seen == 0) {
             std::uint32_t expected = 0;
-            if (!g_seen[slot].compare_exchange_strong(expected, rva, std::memory_order_relaxed)) {
-                continue;
+            if (g_seen[slot].compare_exchange_strong(expected, key, std::memory_order_relaxed)) {
+                return true;
             }
-            std::array<char, 96> line{};
-            const int written = std::snprintf(
-                line.data(), line.size(), "ev=bindtrace stage=content_load caller_rva=0x%08X", rva);
-            if (written > 0) {
-                core::log::write(core::log::Channel::client,
-                                 core::log::Level::info,
-                                 {line.data(), static_cast<std::size_t>(written)});
-            }
-            return;
+            continue;
         }
         ++slot;
     }
+    return false;
 }
 
-/** Records the caller RVA, then forwards to the native binding manager unchanged. */
+/** Records the runtime return-address chain, then forwards to the native binding manager. */
 __declspec(noinline) void __fastcall binding_manager(void* a, void* b, void* c, void* d) noexcept {
-    const auto caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
-    if (g_base != 0 && caller > g_base) {
-        report_caller(static_cast<std::uint32_t>(caller - g_base));
+    if (g_base != 0) {
+        const auto* stack = reinterpret_cast<const std::uintptr_t*>(_AddressOfReturnAddress());
+        std::array<std::uint32_t, kChainDepth> chain{};
+        std::size_t found = 0;
+        for (std::size_t k = 0; k < kStackScan && found < kChainDepth; ++k) {
+            const std::uintptr_t value = stack[k];
+            if (value > g_base && value < g_base + kImageSpan) {
+                chain[found++] = static_cast<std::uint32_t>(value - g_base);
+            }
+        }
+        if (found != 0 && claim(chain[0])) {
+            std::array<char, 160> line{};
+            int used = std::snprintf(line.data(), line.size(), "ev=bindtrace stage=content_load chain=");
+            for (std::size_t i = 0; i < found && used > 0 && static_cast<std::size_t>(used) + 12 < line.size(); ++i) {
+                used += std::snprintf(line.data() + used, line.size() - static_cast<std::size_t>(used),
+                                      "%s0x%08X", i == 0 ? "" : ",", chain[i]);
+            }
+            if (used > 0) {
+                core::log::write(core::log::Channel::client,
+                                 core::log::Level::info,
+                                 {line.data(), static_cast<std::size_t>(used)});
+            }
+        }
     }
     reinterpret_cast<Original>(g_handle.original)(a, b, c, d);
 }
