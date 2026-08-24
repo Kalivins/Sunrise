@@ -515,6 +515,25 @@ void tick_bound(Storage& table, std::size_t slot, std::uint64_t now) noexcept {
                static_cast<unsigned>(builtRecord.lifecycleRevision),
                static_cast<unsigned>(builtRecord.baseline.byteCount),
                static_cast<unsigned>(builtRecord.update.byteCount));
+        // Measure the squad baseline callback in isolation. The create frame encodes to only 39 bits,
+        // too few for the 55-bit baseline, so confirm whether the callback itself emits those bits.
+        {
+            const auto& baseCodec = replication::scriptless_payload_codec();
+            middleware::encoding::bits::Writer measure =
+                middleware::encoding::bits::Writer::measuring();
+            middleware::gameplay::external::TypePayload emptyPayload{};
+            const bool baselineOk =
+                baseCodec.write != nullptr
+                && baseCodec.write(baseCodec.context, builtRecord.token,
+                                   middleware::gameplay::external::EntityType::squad,
+                                   middleware::gameplay::external::TypePayloadPart::baseline,
+                                   emptyPayload, measure);
+            std::size_t baselineBits = 0;
+            const bool baselineFinished = baselineOk && measure.finish(baselineBits);
+            report(core::log::Level::info,
+                   "ev=physics stage=baseline_probe ok=%d bits=%zu maxbase=%zu",
+                   baselineFinished ? 1 : 0, baselineBits, baseCodec.maximumBaselineBits);
+        }
         // Encode witness (next rung of the drive). write_external_entity_frame has no caller in the
         // tree: the codec header marks its four entry points "no caller yet ... wait on the
         // gameplay_external_body gate". Drive it here against the scriptless codec to test whether
