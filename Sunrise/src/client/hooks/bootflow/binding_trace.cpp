@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <intrin.h>
 #include <string_view>
 
 #include "../../../core/logging/log.h"
@@ -13,102 +14,105 @@ namespace sunrise::client::hooks::bootflow {
 namespace {
 
 /**
- * DIAGNOSTIC binding-creation ground-truth trace. FUN_01703690 (RVA 0x1703690) is the binding
- * creator: it attaches a content object (its 4th argument) to a placed object (its 4th-argument
- * receiver) and sets receiver+0x18, the flag the seed machine reads. Hooking it captures the two
- * pointers at the source, so their structure is read from live memory instead of guessed from
- * static offsets. Log, once per distinct receiver, the receiver's leading bytes (to locate its
- * registry key against the known participant keys) and the content pointer, then forward unchanged.
- * This maps what actually loads and binds during a mission, which is where a squad's content would
- * have to appear. To be removed.
+ * DIAGNOSTIC sense_update consumer finder. FUN_004c74b0 is the generic schema deserializer thunk; its
+ * first argument is the class id being parsed. When the client receives a server->client sense_update
+ * (message type 6) with a non-empty delta, it deserializes that delta with class 0x80808769. Detour
+ * the thunk, and when the class is 0x80808769 log the return address as an image RVA -- that caller is
+ * the sense_update handler / consumer, which static analysis cannot reach because the deserializer is
+ * invoked only indirectly. Only rcx and the return address are read, never memory, so nothing faults.
+ * Pair with command_emit (a non-empty command) to make the client take this path. To be removed.
  */
-constexpr std::string_view kCreatorText =
-    "48 89 5C 24 ? 48 89 6C 24 ? 48 89 74 24 ? 57 48 83 EC 20 48 8B F1 49 8B D8 48 81 C1 70 02 00 00 48 8B FA";
+constexpr std::string_view kDeserText =
+    "48 83 EC 38 8B 44 24 60 89 44 24 20 E8 ? ? ? ? B0 01 48 83 C4 38 C3";
 /** Compiled pattern bytes of the signature text above. */
-constexpr auto kCreator = signature<signature_length(kCreatorText)>(kCreatorText);
+constexpr auto kDeser = signature<signature_length(kDeserText)>(kDeserText);
 
-/** Distinct receiver objects to report before the trace goes quiet. */
-constexpr std::size_t kSeenCap = 12;
+/** RVA of the traced thunk, used to recover the image base from the resolved target. */
+constexpr std::uintptr_t kDeserRva = 0x4c74b0;
+/** The sense_update delta schema class id. */
+constexpr std::uintptr_t kSenseClass = 0x80808769;
+/** Distinct caller sites to log before the trace goes quiet. */
+constexpr std::size_t kSeenCap = 24;
 
 hooking::detour::Handle g_handle{};
-std::array<std::atomic<std::uintptr_t>, kSeenCap> g_seen{};
+std::uintptr_t g_base{};
+std::array<std::atomic<std::uint32_t>, kSeenCap> g_seen{};
 
-using Original = void(__fastcall*)(void*, void*, void*, void*, void*);
+using Original = char(__fastcall*)(void*, void*, void*, void*, void*);
 
-/** @return True if the receiver pointer is new and was claimed, false if seen or the table is full. */
-[[nodiscard]] bool claim(std::uintptr_t key) noexcept {
+/** Logs one caller RVA the first time it is seen, ignoring repeats and losing races safely. */
+void report_caller(std::uint32_t rva) noexcept {
     std::size_t slot = 0;
     while (slot < kSeenCap) {
-        const std::uintptr_t seen = g_seen[slot].load(std::memory_order_relaxed);
-        if (seen == key) {
-            return false;
+        const std::uint32_t seen = g_seen[slot].load(std::memory_order_relaxed);
+        if (seen == rva) {
+            return;
         }
         if (seen == 0) {
-            std::uintptr_t expected = 0;
-            if (g_seen[slot].compare_exchange_strong(expected, key, std::memory_order_relaxed)) {
-                return true;
+            std::uint32_t expected = 0;
+            if (!g_seen[slot].compare_exchange_strong(expected, rva, std::memory_order_relaxed)) {
+                continue;
             }
-            continue;
+            std::array<char, 96> line{};
+            const int written = std::snprintf(
+                line.data(), line.size(), "ev=senseconsumer stage=deser caller_rva=0x%08X", rva);
+            if (written > 0) {
+                core::log::write(core::log::Channel::client,
+                                 core::log::Level::info,
+                                 {line.data(), static_cast<std::size_t>(written)});
+            }
+            return;
         }
         ++slot;
     }
-    return false;
 }
 
-/** Dumps the receiver and content pointers, then forwards to the native binding creator. */
-__declspec(noinline) void __fastcall creator(void* rcx, void* rdx, void* r8, void* r9, void* stack5) noexcept {
-    // Log only the pointers -- never dereference the receiver. During load this hook fires with a
-    // not-yet-constructed object, so reading its bytes faults and freezes the client; the sweep only
-    // needs to know that a bind (a content load) happened, which the pointers alone report.
-    void* const receiver = r9;
-    void* const content = r8;
-    if (receiver != nullptr && claim(reinterpret_cast<std::uintptr_t>(receiver))) {
-        std::array<char, 96> line{};
-        const int written = std::snprintf(
-            line.data(),
-            line.size(),
-            "ev=bindtrace stage=bind obj=0x%llX content=0x%llX",
-            static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(receiver)),
-            static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(content)));
-        if (written > 0) {
-            core::log::write(core::log::Channel::client,
-                             core::log::Level::info,
-                             {line.data(), static_cast<std::size_t>(written)});
+/** Records the caller RVA when the sense schema is deserialized, then forwards unchanged. */
+__declspec(noinline) char __fastcall deserialize(void* rcx,
+                                                 void* rdx,
+                                                 void* r8,
+                                                 void* r9,
+                                                 void* stack5) noexcept {
+    if (reinterpret_cast<std::uintptr_t>(rcx) == kSenseClass && g_base != 0) {
+        const auto caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
+        if (caller > g_base) {
+            report_caller(static_cast<std::uint32_t>(caller - g_base));
         }
     }
-    reinterpret_cast<Original>(g_handle.original)(rcx, rdx, r8, r9, stack5);
+    return reinterpret_cast<Original>(g_handle.original)(rcx, rdx, r8, r9, stack5);
 }
 
 } // namespace
 
 /**
- * Attaches the binding-creation ground-truth trace.
+ * Attaches the sense_update consumer finder.
  * @return True when the target is found and the detour attaches.
  */
 bool install_binding_trace() noexcept {
     if (g_handle.attached) {
         return true;
     }
-    std::byte* const target = scan_main_image_unique(kCreator, "binding_creator");
+    std::byte* const target = scan_main_image_unique(kDeser, "sense_deserializer");
     if (target == nullptr) {
         core::log::write(core::log::Channel::client,
                          core::log::Level::warn,
-                         "ev=bindtrace result=fail reason=target");
+                         "ev=senseconsumer result=fail reason=target");
         return false;
     }
-    const hooking::detour::Spec spec{target, reinterpret_cast<void*>(&creator)};
+    g_base = reinterpret_cast<std::uintptr_t>(target) - kDeserRva;
+    const hooking::detour::Spec spec{target, reinterpret_cast<void*>(&deserialize)};
     if (!hooking::detour::install(spec, g_handle)) {
         core::log::write(core::log::Channel::client,
                          core::log::Level::warn,
-                         "ev=bindtrace result=fail reason=attach");
+                         "ev=senseconsumer result=fail reason=attach");
         return false;
     }
     core::log::write(
-        core::log::Channel::client, core::log::Level::info, "ev=bindtrace result=ok");
+        core::log::Channel::client, core::log::Level::info, "ev=senseconsumer result=ok");
     return true;
 }
 
-/** Detaches the binding-creation ground-truth trace. */
+/** Detaches the sense_update consumer finder. */
 void uninstall_binding_trace() noexcept {
     if (g_handle.attached) {
         (void)hooking::detour::uninstall(g_handle);
