@@ -103,6 +103,19 @@ struct ActivityDefaults final {
     std::uint16_t monitorBodySlotIndex{};
     std::uint32_t monitorBodyValue{};
     /**
+     * One optional of the type-1 squad body, opened with the slot reference it carries. Probing the
+     * schema one optional at a time shows six of its nineteen carry a reference of registry key,
+     * slot type and slot index, matching what a squad placement is documented to hold: a source
+     * slot, a spawner config, a spawn-rule config and anchors. The body ships with all of them
+     * absent, so a seeded squad names nothing to follow. Which optional names the spawn rule is not
+     * recovered, so it is chosen here and swept without a rebuild. Off by default.
+     */
+    bool squadReferenceEnabled{};
+    std::uint8_t squadReferenceOptional{};
+    std::uint32_t squadReferenceKey{};
+    std::uint8_t squadReferenceSlotType{};
+    std::uint16_t squadReferenceSlotIndex{};
+    /**
      * DIAGNOSTIC squad.place injection. When squadPlaceEnabled is on, a synthetic top-level roster
      * group is injected carrying one type-1 (squad) auth slot at `squadPlaceIndex`, keyed by
      * `squadPlaceKey`, so a squad's placement slot enters the roster (it is not admitted otherwise).

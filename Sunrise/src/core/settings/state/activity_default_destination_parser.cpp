@@ -90,6 +90,11 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
     bool hasMonitorBodySlotType = false;
     bool hasMonitorBodySlotIndex = false;
     bool hasMonitorBodyValue = false;
+    bool hasSquadReferenceEnabled = false;
+    bool hasSquadReferenceOptional = false;
+    bool hasSquadReferenceKey = false;
+    bool hasSquadReferenceSlotType = false;
+    bool hasSquadReferenceSlotIndex = false;
     bool hasCommandEmitEnabled = false;
     bool hasCommandBody = false;
     bool hasCommandSweepEnabled = false;
@@ -184,6 +189,39 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
             }
             output.monitorBodyValue = static_cast<std::uint32_t>(value);
             hasMonitorBodyValue = true;
+        } else if (key == "squad_reference_enabled") {
+            if (hasSquadReferenceEnabled || !boolean(output.squadReferenceEnabled)) {
+                return false;
+            }
+            hasSquadReferenceEnabled = true;
+        } else if (key == "squad_reference_optional") {
+            std::uint64_t value = 0;
+            if (hasSquadReferenceOptional || !unsigned_integer(value) || value > 18) {
+                return false;
+            }
+            output.squadReferenceOptional = static_cast<std::uint8_t>(value);
+            hasSquadReferenceOptional = true;
+        } else if (key == "squad_reference_key") {
+            std::uint64_t value = 0;
+            if (hasSquadReferenceKey || !unsigned_integer(value) || value > 0xFFFFFFFFULL) {
+                return false;
+            }
+            output.squadReferenceKey = static_cast<std::uint32_t>(value);
+            hasSquadReferenceKey = true;
+        } else if (key == "squad_reference_slot_type") {
+            std::uint64_t value = 0;
+            if (hasSquadReferenceSlotType || !unsigned_integer(value) || value > 0x7FULL) {
+                return false;
+            }
+            output.squadReferenceSlotType = static_cast<std::uint8_t>(value);
+            hasSquadReferenceSlotType = true;
+        } else if (key == "squad_reference_slot_index") {
+            std::uint64_t value = 0;
+            if (hasSquadReferenceSlotIndex || !unsigned_integer(value) || value > 0xFFFFULL) {
+                return false;
+            }
+            output.squadReferenceSlotIndex = static_cast<std::uint16_t>(value);
+            hasSquadReferenceSlotIndex = true;
         } else if (key == "squad_place_key") {
             std::uint64_t key32 = 0;
             if (hasSquadPlaceKey || !unsigned_integer(key32) || key32 > 0xFFFFFFFFULL) {

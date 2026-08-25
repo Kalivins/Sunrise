@@ -50,6 +50,36 @@ constexpr std::size_t kSpawnKeyCount = 32;
  * bits, a 2-bit and a 3-bit fixed field, then one presence bit. */
 constexpr std::size_t kSquadBodyBits = 18 + 2 + 3 + 1;
 /**
+ * The squad body's optionals, opened one at a time against the all-absent baseline the encoder
+ * writes today. Six of the nineteen carry a slot reference of registry key, slot type and slot
+ * index, and the rest carry scalars:
+ *   0, 1, 9, 10, 11, 12 -> 55 bits, a slot reference
+ *   2..8, 13..18        -> 3, 4, 4, 13, 31, 32, 32 and 31, 31, 6, 5, 31, 32 bits
+ * Six references match what a squad placement is documented to carry -- a source slot, a spawner
+ * config, a spawn-rule config and anchors -- and sending them all absent is what leaves a seeded
+ * squad with no rule to follow. Which one names the spawn rule is not recovered, so the optional is
+ * chosen from settings and swept without a rebuild. Only the reference-shaped ones are selectable,
+ * so the body stays exact whatever the setting says.
+ */
+constexpr std::array<std::uint8_t, 6> kSquadReferenceOptionals = {0, 1, 9, 10, 11, 12};
+constexpr std::size_t kSquadReferenceBits =
+    32 + std::size_t{kSlotTypeWidth} + std::size_t{kSlotIndexWidth};
+/** Presence bits before the body's two fixed fields; the nineteenth follows them. */
+constexpr std::size_t kSquadLeadingOptionals = 18;
+
+/** @return True when the settings name one of the reference-shaped optionals. */
+[[nodiscard]] bool squad_reference_selected(const Snapshot& snapshot) noexcept {
+    if (!snapshot.squadReferenceEnabled) {
+        return false;
+    }
+    for (const std::uint8_t optional : kSquadReferenceOptionals) {
+        if (optional == snapshot.squadReferenceOptional) {
+            return true;
+        }
+    }
+    return false;
+}
+/**
  * Type 30 (player monitor) auth body, schema 0x80809532. The slot descriptor names each slot's auth
  * schema at its own offset 72, so this is read from the content rather than inferred: the same field
  * gives type 1 the schema this file already writes, which is what makes it trustworthy here. Its
@@ -190,7 +220,7 @@ auth_body_bits(const Snapshot& snapshot, std::uint8_t slotType, bool carriesPlay
     // deserializer 0x4c74b0. The placement form presents field 0 (a slot reference), the field the
     // consumer (0x1703d70) reads to drive its placement branch; see kSquadBodyBits.
     if (slotType == kSlotTypeSquad && snapshot.squadPlaceEnabled) {
-        return kSquadBodyBits;
+        return kSquadBodyBits + (squad_reference_selected(snapshot) ? kSquadReferenceBits : 0);
     }
     if (slotType == kSlotTypeMonitor && snapshot.monitorBodyEnabled) {
         return kMonitorBodyBits;
@@ -238,8 +268,21 @@ bool write_auth_body(bits::Writer& writer,
         // not from a body-supplied one. 18 absent optionals, the 2-bit and 3-bit fixed fields carry
         // squadPlaceValue, then one absent optional. Consistent with the client schema, so no desync;
         // the question this answers is whether a seeded squad slot with a valid body instantiates.
-        for (std::size_t index = 0; encoded && index < 18; ++index) {
-            encoded = writer.write(0, kPresenceWidth);
+        const bool reference = squad_reference_selected(snapshot);
+        for (std::size_t index = 0; encoded && index < kSquadLeadingOptionals; ++index) {
+            const bool open = reference && index == snapshot.squadReferenceOptional;
+            encoded = writer.write(open ? 1U : 0U, kPresenceWidth);
+            if (encoded && open) {
+                // The reference the optional opens: registry key, then the slot type and index at
+                // the biases the block header uses, so it names a slot the roster published.
+                encoded =
+                    writer.write(snapshot.squadReferenceKey, 32)
+                    && writer.write(std::uint32_t{snapshot.squadReferenceSlotType} + kSlotTypeBias,
+                                    kSlotTypeWidth)
+                    && writer.write(std::uint32_t{snapshot.squadReferenceSlotIndex}
+                                        + kSlotIndexBias,
+                                    kSlotIndexWidth);
+            }
         }
         encoded = encoded && writer.write(snapshot.squadPlaceValue & 0x3U, 2)
                   && writer.write((snapshot.squadPlaceValue >> 2) & 0x7U, 3)

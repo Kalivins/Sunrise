@@ -450,6 +450,13 @@ RosterOutcome build_roster_snapshot(Session& session,
     snapshot.monitorBodySlotType = defaults.monitorBodySlotType;
     snapshot.monitorBodySlotIndex = defaults.monitorBodySlotIndex;
     snapshot.monitorBodyValue = defaults.monitorBodyValue;
+    // One squad-body optional and the reference it opens. Which optional names the spawn rule is not
+    // recovered, so the choice is swept from settings rather than fixed here.
+    snapshot.squadReferenceEnabled = defaults.squadReferenceEnabled;
+    snapshot.squadReferenceOptional = defaults.squadReferenceOptional;
+    snapshot.squadReferenceKey = defaults.squadReferenceKey;
+    snapshot.squadReferenceSlotType = defaults.squadReferenceSlotType;
+    snapshot.squadReferenceSlotIndex = defaults.squadReferenceSlotIndex;
     // Exit-3 auth bodies: carry the settings bit-programs to the auth-body writer. The two step
     // types sit on opposite sides of the layer boundary, so copy field by field.
     snapshot.scriptBodyEnabled = defaults.scriptBodyEnabled;

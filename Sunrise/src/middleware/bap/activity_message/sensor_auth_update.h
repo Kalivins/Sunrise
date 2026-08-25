@@ -146,6 +146,16 @@ struct Snapshot final {
     std::uint8_t monitorBodySlotType{};
     std::uint16_t monitorBodySlotIndex{};
     std::uint32_t monitorBodyValue{};
+    /**
+     * One optional of the squad body, opened with the slot reference it carries. The body ships with
+     * all nineteen absent, which leaves a seeded squad naming nothing; six of them are references,
+     * and which one names the spawn rule is not recovered, so the choice is swept from settings.
+     */
+    bool squadReferenceEnabled{};
+    std::uint8_t squadReferenceOptional{};
+    std::uint32_t squadReferenceKey{};
+    std::uint8_t squadReferenceSlotType{};
+    std::uint16_t squadReferenceSlotIndex{};
     /** Slot-reference target for the placement body's field 0: the squad object's registry key and
      *  slot index, matching the seeded roster slot so the consumer lookup resolves. */
     std::uint32_t squadPlaceKey{};
