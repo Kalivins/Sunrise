@@ -359,7 +359,7 @@ bool resolve_object(const reader::Source& source,
         // Short is allowed only for the scoped encounter keys: they are the groups whose spawn
         // rules never reach the wire, and lifting the rule for everything empties the roster.
         const bool allowShort = core::settings::get().server.activation.rosterShortGroups
-                                && candidate.registryKey == kShortGroupKey;
+                                && is_scoped_sensor(candidate.registryKey);
         built = fill_slots(storage, declared.count, allowShort, candidate);
     }
     if (!built) {
@@ -418,7 +418,11 @@ bool resolve_object(const reader::Source& source,
         }
     }
     if (storage.groupCount == layouts::kRosterGroupCapacity) {
-        return false;
+        // A full table drops this one group. Failing the walk instead loses every group of the
+        // destination, and a destination with no groups publishes no roster at all, which leaves the
+        // client waiting on a world that never arrives -- a far worse answer than one group short.
+        ++storage.unresolvedGroups;
+        return true;
     }
     storage.groups[storage.groupCount] = candidate;
     storage.memo[slot].group = static_cast<std::uint16_t>(storage.groupCount);
