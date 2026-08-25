@@ -223,6 +223,42 @@ fill_roster(const layouts::Definition& layout, Scratch& scratch,
                              {line.data(), static_cast<std::size_t>(written)});
         }
     }
+    // TABLE WITNESS (diagnostic). Extraction keeps far fewer groups than the mission authors, so the
+    // publishable set is whatever survived it. List what the table holds, with the slot types that
+    // matter here, so a target is chosen from the groups that exist rather than from the blueprint.
+    {
+        const std::size_t total = layouts::group_count();
+        for (std::size_t index = 0; index < total; ++index) {
+            layouts::RosterGroup entry{};
+            if (!layouts::group(index, entry)) {
+                continue;
+            }
+            unsigned squad = 0;
+            unsigned monitor = 0;
+            for (std::size_t slot = 0; slot < entry.slotCount; ++slot) {
+                if (entry.slotTypes[slot] == 1) {
+                    ++squad;
+                } else if (entry.slotTypes[slot] == 30) {
+                    ++monitor;
+                }
+            }
+            std::array<char, core::log::kLineCapacity> row{};
+            const int used = std::snprintf(row.data(),
+                                           row.size(),
+                                           "ev=activity stage=table i=%zu key=0x%08X slots=%u "
+                                           "squad=%u monitor=%u",
+                                           index,
+                                           entry.registryKey,
+                                           static_cast<unsigned>(entry.slotCount),
+                                           squad,
+                                           monitor);
+            if (used > 0) {
+                core::log::write(core::log::Channel::server,
+                                 core::log::Level::debug,
+                                 {row.data(), static_cast<std::size_t>(used)});
+            }
+        }
+    }
     roster.bubbleSubBlocks = fill_sub_blocks(layout, scratch, roster);
     // Only a top-level group can bind the player: its object is in every slice set, so the gate
     // reads it wherever the player is.
