@@ -13,7 +13,6 @@
 #include "../../../middleware/gameplay/peer/join_messages.h"
 #include "../../../middleware/gameplay/peer/peer_container.h"
 #include "../../../middleware/gameplay/peer/reliable_assembly.h"
-#include "../../../core/settings/settings.h"
 #include "../association/association_host.h"
 #include "../dtls/dtls_host.h"
 #include "../endpoint/gameplay_endpoint.h"
@@ -614,27 +613,6 @@ void consume_established(const gp::Endpoint& from,
     if (!wire::decode_established(payload, false, packet)) {
         report(core::log::Level::debug, "ev=gameplay stage=packet result=drop reason=grammar");
         return;
-    }
-    // External-body presence probe (behind reconstruct_mission_policy). After the fixed handlers and
-    // both reliable queues, the remaining payload bits are the external gameplay handler body -- the
-    // client's common root, when it sends one. The real common handshake depends on the client
-    // actually filling this region, which today the server never asks for (expectExternal=false).
-    // Measure it read-only and sampled, tracking the running max, to learn whether any packet carries
-    // a substantial external body. Nothing here changes the grammar or any state.
-    if (core::settings::get().server.activation.reconstructMissionPolicy) {
-        static std::uint64_t externalProbeCount = 0;
-        static std::size_t externalBitsMax = 0;
-        const std::size_t payloadBits = payload.size() * 8U;
-        const std::size_t externalBits =
-            payloadBits > packet.externalBitOffset ? payloadBits - packet.externalBitOffset : 0U;
-        if (externalBits > externalBitsMax) {
-            externalBitsMax = externalBits;
-        }
-        if ((externalProbeCount++ % 30U) == 0U) {
-            report(core::log::Level::info,
-                   "ev=gameplay stage=external_probe ext_bits=%zu ext_max=%zu payload_bits=%zu",
-                   externalBits, externalBitsMax, payloadBits);
-        }
     }
     std::array<std::uint8_t, kMessageReportCapacity> delivered{};
     std::size_t deliveredCount = 0;
