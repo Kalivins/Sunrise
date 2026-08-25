@@ -13,7 +13,6 @@
 #include "../../../middleware/gameplay/peer/join_messages.h"
 #include "../../../middleware/gameplay/peer/peer_container.h"
 #include "../../../middleware/gameplay/peer/reliable_assembly.h"
-#include "../../../middleware/gameplay/external/external_entity_codec.h"
 #include "../../../core/settings/settings.h"
 #include "../association/association_host.h"
 #include "../dtls/dtls_host.h"
@@ -743,38 +742,6 @@ void consume_established(const gp::Endpoint& from,
 }
 
 /**
- * Writes the packet's closing trailer. Normally the two absent-filler bits (extended-presence=0,
- * external-body-present=0). Under reconstruct_mission_policy this runs a reciprocation experiment on
- * a fraction of ack packets: it announces an external body (external-present=1) and appends a minimal
- * empty external frame, to test whether the client then starts emitting its own common root in the
- * external region (measured by the inbound external_probe). Kept to a fraction so a client parse
- * reject cannot stall every ack and drop the link -- normal acks keep flowing between probes.
- */
-[[nodiscard]] bool write_ack_trailer(bits::Writer& writer) noexcept {
-    if (!core::settings::get().server.activation.reconstructMissionPolicy) {
-        return wire::write_absent_filler(writer);
-    }
-    static std::uint64_t ackCount = 0;
-    const bool probe = (ackCount++ % 8U) == 0U;
-    if (!probe) {
-        return wire::write_absent_filler(writer);
-    }
-    middleware::gameplay::external::ExternalEntityFrame emptyFrame{};
-    const middleware::gameplay::external::TypePayloadCodec emptyCodec{};
-    const bool ok = writer.write(0, 1)   // extended-presence bit
-                    && writer.write(1, 1) // external-body present bit
-                    && middleware::gameplay::external::write_external_entity_frame(
-                           writer, emptyCodec, emptyFrame);
-    static bool loggedFirst = false;
-    if (ok && !loggedFirst) {
-        loggedFirst = true;
-        report(core::log::Level::info,
-               "ev=gameplay stage=recip_trailer result=first note=external-present+empty-frame");
-    }
-    return ok;
-}
-
-/**
  * Builds and sends one acknowledgement-only packet.
  * @param peer Peer state copied under the lock before the send.
  * @return True when the packet left the endpoint.
@@ -798,7 +765,7 @@ void consume_established(const gp::Endpoint& from,
     std::size_t size = 0;
     // Only the 32-byte queue carries this host's messages; the 6-byte queue stays empty.
     if (!wire::write_head_and_ack(writer, guard, ack) || !wire::write_queue(writer, peer.outbound)
-        || !wire::write_empty_queue(writer) || !write_ack_trailer(writer)
+        || !wire::write_empty_queue(writer) || !wire::write_absent_filler(writer)
         || !writer.finish(size)) {
         return false;
     }
