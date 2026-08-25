@@ -16,6 +16,8 @@ constexpr std::uint8_t kSlotTypeSpawnKeys = 67;
 /** Exit-3 targets: mounted natively, bodyless in Sunrise, filled from a settings bit-program. */
 constexpr std::uint8_t kSlotTypeScript = 18;
 constexpr std::uint8_t kSlotTypeDirector = 35;
+/** Player monitor. Mounts from the roster but ships seed-only, so it carries no authored state. */
+constexpr std::uint8_t kSlotTypeMonitor = 30;
 
 /** Body widths, each checked against the writer after the body is written. */
 constexpr std::size_t kParticipationBits = 192;
@@ -47,6 +49,18 @@ constexpr std::size_t kSpawnKeyCount = 32;
  * instantiates the squad from its own authored placement instead of a body-carried one. 18 presence
  * bits, a 2-bit and a 3-bit fixed field, then one presence bit. */
 constexpr std::size_t kSquadBodyBits = 18 + 2 + 3 + 1;
+/**
+ * Type 30 (player monitor) auth body, schema 0x80809532. The slot descriptor names each slot's auth
+ * schema at its own offset 72, so this is read from the content rather than inferred: the same field
+ * gives type 1 the schema this file already writes, which is what makes it trustworthy here. Its
+ * layout, taken by emulating the schema deserializer, is a fixed 87-bit record that opens with a
+ * slot reference -- registry key, slot type, slot index -- and closes with one 32-bit value, the same
+ * shape the squad's own auth body uses for its placement target.
+ */
+constexpr std::uint8_t kMonitorKeyBits = 32;
+constexpr std::uint8_t kMonitorValueBits = 32;
+constexpr std::size_t kMonitorBodyBits = std::size_t{kMonitorKeyBits} + kSlotTypeWidth
+                                         + kSlotIndexWidth + std::size_t{kMonitorValueBits};
 
 /**
  * Writes the participation body, which binds the player and latches the region. Zero-fill is not
@@ -178,6 +192,9 @@ auth_body_bits(const Snapshot& snapshot, std::uint8_t slotType, bool carriesPlay
     if (slotType == kSlotTypeSquad && snapshot.squadPlaceEnabled) {
         return kSquadBodyBits;
     }
+    if (slotType == kSlotTypeMonitor && snapshot.monitorBodyEnabled) {
+        return kMonitorBodyBits;
+    }
     // Exit-3 auth bodies. These slots are mounted natively and ship bodyless today; when enabled
     // they carry a settings-authored bit-program. The count equals what write_auth_body emits, so
     // the block's remainder frames it exactly.
@@ -227,6 +244,17 @@ bool write_auth_body(bits::Writer& writer,
         encoded = encoded && writer.write(snapshot.squadPlaceValue & 0x3U, 2)
                   && writer.write((snapshot.squadPlaceValue >> 2) & 0x7U, 3)
                   && writer.write(0, kPresenceWidth);
+    } else if (slotType == kSlotTypeMonitor && snapshot.monitorBodyEnabled) {
+        // Schema 0x80809532 in wire order: the reference triple, then the trailing value. Type and
+        // index carry the same biases the block header uses for a slot reference. What the reference
+        // should name is not recovered, so it comes from settings: a wrong target is a wrong monitor,
+        // not a desync, because the width holds either way.
+        encoded = writer.write(snapshot.monitorBodyKey, kMonitorKeyBits)
+                  && writer.write(std::uint32_t{snapshot.monitorBodySlotType} + kSlotTypeBias,
+                                  kSlotTypeWidth)
+                  && writer.write(std::uint32_t{snapshot.monitorBodySlotIndex} + kSlotIndexBias,
+                                  kSlotIndexWidth)
+                  && writer.write(snapshot.monitorBodyValue, kMonitorValueBits);
     } else if (slotType == kSlotTypeScript && snapshot.scriptBodyEnabled) {
         encoded = write_program(writer,
                                 snapshot.scriptBody.data(),

@@ -351,6 +351,13 @@ RosterOutcome build_roster_snapshot(Session& session,
     // Placement body field 0 references the same squad object/slot the injected roster group seeds.
     snapshot.squadPlaceKey = defaults.squadPlaceKey;
     snapshot.squadPlaceIndex = defaults.squadPlaceIndex;
+    // Type-30 monitor body (schema 0x80809532, named by the slot descriptor). The width is recovered;
+    // what the reference should name is not, so the target stays settings-driven.
+    snapshot.monitorBodyEnabled = defaults.monitorBodyEnabled;
+    snapshot.monitorBodyKey = defaults.monitorBodyKey;
+    snapshot.monitorBodySlotType = defaults.monitorBodySlotType;
+    snapshot.monitorBodySlotIndex = defaults.monitorBodySlotIndex;
+    snapshot.monitorBodyValue = defaults.monitorBodyValue;
     // Exit-3 auth bodies: carry the settings bit-programs to the auth-body writer. The two step
     // types sit on opposite sides of the layer boundary, so copy field by field.
     snapshot.scriptBodyEnabled = defaults.scriptBodyEnabled;

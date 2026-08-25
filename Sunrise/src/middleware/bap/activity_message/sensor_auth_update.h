@@ -135,6 +135,17 @@ struct Snapshot final {
     bool squadPlaceEnabled{};
     std::uint8_t squadPlaceWidth{};
     std::uint64_t squadPlaceValue{};
+    /**
+     * Type-30 (player monitor) auth body, schema 0x80809532: a fixed 87-bit record holding a slot
+     * reference -- registry key, slot type, slot index -- and one 32-bit value. The type-30 slot
+     * ships seed-only today, so a monitor mounts but is handed no authority. What the reference
+     * should name is not recovered, so it is settings-driven.
+     */
+    bool monitorBodyEnabled{};
+    std::uint32_t monitorBodyKey{};
+    std::uint8_t monitorBodySlotType{};
+    std::uint16_t monitorBodySlotIndex{};
+    std::uint32_t monitorBodyValue{};
     /** Slot-reference target for the placement body's field 0: the squad object's registry key and
      *  slot index, matching the seeded roster slot so the consumer lookup resolves. */
     std::uint32_t squadPlaceKey{};

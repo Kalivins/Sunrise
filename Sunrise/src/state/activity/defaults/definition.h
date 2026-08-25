@@ -90,6 +90,19 @@ struct ActivityDefaults final {
     std::uint8_t squadPlaceWidth{};
     std::uint64_t squadPlaceValue{};
     /**
+     * Type-30 (player monitor) auth body, schema 0x80809532, which the slot descriptor names at its
+     * own offset 72. The same field gives type 1 the schema Sunrise already writes, so the reading is
+     * anchored rather than guessed. The body is a fixed 87-bit record: a slot reference of registry
+     * key, slot type and slot index, then one 32-bit value. What that reference should name is not
+     * recovered, so it stays settings-driven: a wrong target is a wrong monitor rather than a desync,
+     * and sweeping targets must not cost a rebuild. Off by default.
+     */
+    bool monitorBodyEnabled{};
+    std::uint32_t monitorBodyKey{};
+    std::uint8_t monitorBodySlotType{};
+    std::uint16_t monitorBodySlotIndex{};
+    std::uint32_t monitorBodyValue{};
+    /**
      * DIAGNOSTIC squad.place injection. When squadPlaceEnabled is on, a synthetic top-level roster
      * group is injected carrying one type-1 (squad) auth slot at `squadPlaceIndex`, keyed by
      * `squadPlaceKey`, so a squad's placement slot enters the roster (it is not admitted otherwise).

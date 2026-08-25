@@ -85,6 +85,11 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
     bool hasSquadPlaceKey = false;
     bool hasSquadPlaceIndex = false;
     bool hasSquadPlaceRegion = false;
+    bool hasMonitorBodyEnabled = false;
+    bool hasMonitorBodyKey = false;
+    bool hasMonitorBodySlotType = false;
+    bool hasMonitorBodySlotIndex = false;
+    bool hasMonitorBodyValue = false;
     bool hasCommandEmitEnabled = false;
     bool hasCommandBody = false;
     bool hasCommandSweepEnabled = false;
@@ -146,6 +151,39 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
             }
             output.squadPlaceValue = value;
             hasSquadPlaceValue = true;
+        } else if (key == "monitor_body_enabled") {
+            if (hasMonitorBodyEnabled || !boolean(output.monitorBodyEnabled)) {
+                return false;
+            }
+            hasMonitorBodyEnabled = true;
+        } else if (key == "monitor_body_key") {
+            std::uint64_t value = 0;
+            if (hasMonitorBodyKey || !unsigned_integer(value) || value > 0xFFFFFFFFULL) {
+                return false;
+            }
+            output.monitorBodyKey = static_cast<std::uint32_t>(value);
+            hasMonitorBodyKey = true;
+        } else if (key == "monitor_body_slot_type") {
+            std::uint64_t value = 0;
+            if (hasMonitorBodySlotType || !unsigned_integer(value) || value > 0x7FULL) {
+                return false;
+            }
+            output.monitorBodySlotType = static_cast<std::uint8_t>(value);
+            hasMonitorBodySlotType = true;
+        } else if (key == "monitor_body_slot_index") {
+            std::uint64_t value = 0;
+            if (hasMonitorBodySlotIndex || !unsigned_integer(value) || value > 0xFFFFULL) {
+                return false;
+            }
+            output.monitorBodySlotIndex = static_cast<std::uint16_t>(value);
+            hasMonitorBodySlotIndex = true;
+        } else if (key == "monitor_body_value") {
+            std::uint64_t value = 0;
+            if (hasMonitorBodyValue || !unsigned_integer(value) || value > 0xFFFFFFFFULL) {
+                return false;
+            }
+            output.monitorBodyValue = static_cast<std::uint32_t>(value);
+            hasMonitorBodyValue = true;
         } else if (key == "squad_place_key") {
             std::uint64_t key32 = 0;
             if (hasSquadPlaceKey || !unsigned_integer(key32) || key32 > 0xFFFFFFFFULL) {
