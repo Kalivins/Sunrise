@@ -211,10 +211,7 @@ constexpr std::size_t kMonitorBodyBits = std::size_t{kMonitorKeyBits} + kSlotTyp
 
 /** Reports how many bits of auth body one slot carries. */
 std::size_t
-auth_body_bits(const Snapshot& snapshot,
-               std::uint8_t slotType,
-               std::uint16_t slotIndex,
-               bool carriesPlayerKey) noexcept {
+auth_body_bits(const Snapshot& snapshot, std::uint8_t slotType, bool carriesPlayerKey) noexcept {
     if (slotType == kSlotTypeParticipation) {
         return carriesPlayerKey
                    ? kParticipationBits + (snapshot.hasRegion ? kParticipationRegionBits : 0)
@@ -265,7 +262,7 @@ bool write_auth_body(bits::Writer& writer,
                      std::uint16_t slotIndex,
                      bool carriesPlayerKey) noexcept {
     const std::size_t start = writer.bit_count();
-    const std::size_t expected = auth_body_bits(snapshot, slotType, slotIndex, carriesPlayerKey);
+    const std::size_t expected = auth_body_bits(snapshot, slotType, carriesPlayerKey);
     bool encoded = true;
     if (slotType == kSlotTypeParticipation && carriesPlayerKey) {
         encoded = write_participation(writer, snapshot);

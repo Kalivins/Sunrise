@@ -312,10 +312,7 @@ bubble_bits(std::span<const BubbleSubBlock> subBlocks) noexcept {
  * @return Body bits, or zero for a seed-only block.
  */
 [[nodiscard]] std::size_t
-auth_body_bits(const Snapshot& snapshot,
-                                       std::uint8_t slotType,
-                                       std::uint16_t slotIndex,
-                                       bool carriesPlayerKey) noexcept;
+auth_body_bits(const Snapshot& snapshot, std::uint8_t slotType, bool carriesPlayerKey) noexcept;
 
 /**
  * Writes one slot's auth body.
@@ -328,6 +325,7 @@ auth_body_bits(const Snapshot& snapshot,
 [[nodiscard]] bool write_auth_body(encoding::bits::Writer& writer,
                                    const Snapshot& snapshot,
                                    std::uint8_t slotType,
+                                   std::uint16_t slotIndex,
                                    bool carriesPlayerKey) noexcept;
 
 /**

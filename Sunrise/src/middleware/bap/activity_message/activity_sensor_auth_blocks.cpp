@@ -159,7 +159,7 @@ bool write_object_block(bits::Writer& writer,
                         bool carriesPlayerKey) noexcept {
     const bool emitAuth = (flags & kSlotAuthFlag) != 0;
     const bool emitSense = (flags & kSlotSenseFlag) != 0;
-    const std::size_t body = emitAuth ? auth_body_bits(snapshot, slotType, slotIndex, carriesPlayerKey) : 0;
+    const std::size_t body = emitAuth ? auth_body_bits(snapshot, slotType, carriesPlayerKey) : 0;
     const std::size_t remainder = (emitAuth ? 2U : 0U) + (emitSense ? 1U : 0U) + body;
     bool encoded = writer.write(1, kPresenceWidth) && writer.write(key, kKeyWidth)
                    && writer.write(std::uint32_t{slotType} + kSlotTypeBias, kSlotTypeWidth)
