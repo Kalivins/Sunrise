@@ -59,6 +59,14 @@ constexpr std::array<std::uint32_t, 18> kScopedSensorKeys = {
  */
 constexpr std::array<std::uint32_t, 1> kScopedSquadKeys = {0xef4eaa1eU};
 
+/**
+ * The one encounter whose group may be published short. A registry key is shared by every object of
+ * its encounter, so lifting the rule for the whole scoped list admitted far more groups than the
+ * table holds; overflow aborts the scenario walk and the destination then publishes nothing, which
+ * is what left the client waiting on a world that never came. One key keeps the addition small.
+ */
+constexpr std::uint32_t kShortGroupKey = 0xe3797278U;
+
 /** True when a registry key is one of the scoped squad-parent objects to admit past the whitelist. */
 [[nodiscard]] bool is_scoped_squad(std::uint32_t registryKey) noexcept {
     for (const std::uint32_t key : kScopedSquadKeys) {
@@ -351,7 +359,7 @@ bool resolve_object(const reader::Source& source,
         // Short is allowed only for the scoped encounter keys: they are the groups whose spawn
         // rules never reach the wire, and lifting the rule for everything empties the roster.
         const bool allowShort = core::settings::get().server.activation.rosterShortGroups
-                                && is_scoped_sensor(candidate.registryKey);
+                                && candidate.registryKey == kShortGroupKey;
         built = fill_slots(storage, declared.count, allowShort, candidate);
     }
     if (!built) {
