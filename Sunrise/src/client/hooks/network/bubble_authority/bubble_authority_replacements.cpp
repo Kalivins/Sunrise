@@ -26,6 +26,31 @@ constexpr std::size_t kMaskWords = 4;
 std::atomic<unsigned> g_lastRegistered{0xFFFFFFFFU};
 std::atomic<unsigned> g_lastSeeded{0xFFFFFFFFU};
 
+/**
+ * SEED-DOOR WITNESS (diagnostic). The native seed machine sets a lane's seeded bit through one of
+ * three doors, and otherwise clears it:
+ *   byte[obj+0x18] != 0                      -> seed set   (the binding indicator)
+ *   A() && contentUntracked()                -> CLEAR      (what we hit today: we force the getter
+ *                                                           true so the bubble applies at all)
+ *   [obj+0x1c] <= 0x1ff                      -> seed set
+ * The held lanes never reach a door, so read the two fields the doors test on the lane objects the
+ * roster holds, plus the native (unforced) content-untracked value. That says which door is within
+ * reach instead of guessing. Offsets are lane-object relative; the lane table pointer sits in the
+ * roster container next to the masks. Read defensively: any bad pointer aborts the witness.
+ */
+constexpr std::size_t kLaneTableOffset = 0x10eb0;
+constexpr std::size_t kBindingIndicatorOffset = 0x18;
+constexpr std::size_t kLoadCounterOffset = 0x1c;
+constexpr std::size_t kLoadCounterDoor = 0x1ff;
+/** Report the door state a bounded number of times, so a per-message hook cannot flood the log. */
+std::atomic<unsigned> g_doorReports{0};
+constexpr unsigned kMaxDoorReports = 12;
+/** Native content-untracked value, captured before the decoder scope forces it true. */
+std::atomic<int> g_nativeUntracked{-1};
+
+/** Defined below; reports which seed door the held lanes can reach. */
+void report_doors(const void* roster, int held) noexcept;
+
 /** @return Set-bit count of a 32-bit word. */
 [[nodiscard]] unsigned popcount32(std::uint32_t value) noexcept {
     unsigned count = 0;
@@ -59,6 +84,7 @@ void report_seed(const void* roster) noexcept {
     } __except (1) {
         return;
     }
+    report_doors(roster, static_cast<int>(registered) - static_cast<int>(seeded));
     if (registered == g_lastRegistered.load(std::memory_order_relaxed)
         && seeded == g_lastSeeded.load(std::memory_order_relaxed)) {
         return;
@@ -78,6 +104,56 @@ void report_seed(const void* roster) noexcept {
         registeredWords[1],
         seededWords[0],
         seededWords[1]);
+    if (written > 0) {
+        core::log::write(core::log::Channel::client,
+                         core::log::Level::info,
+                         {line.data(), static_cast<std::size_t>(written)});
+    }
+}
+
+/**
+ * Reports the seed-door state for the roster's lane objects while any lane is held. Reads only the
+ * two fields the seed machine tests, and the native content-untracked value captured before the
+ * decoder forces it. Every dereference is guarded, and a null or unreadable pointer ends the report
+ * rather than risking the decode path.
+ * @param roster Decoded roster container.
+ * @param held How many lanes are registered but not seeded.
+ */
+void report_doors(const void* roster, int held) noexcept {
+    if (roster == nullptr || held <= 0
+        || g_doorReports.fetch_add(1, std::memory_order_relaxed) >= kMaxDoorReports) {
+        return;
+    }
+    const void* lane = nullptr;
+    unsigned indicator = 0;
+    unsigned counter = 0;
+    bool read = false;
+    __try {
+        const auto* base = static_cast<const std::uint8_t*>(roster);
+        lane = *reinterpret_cast<void* const*>(base + kLaneTableOffset);
+        if (lane != nullptr) {
+            const auto* laneBytes = static_cast<const std::uint8_t*>(lane);
+            indicator = laneBytes[kBindingIndicatorOffset];
+            counter = *reinterpret_cast<const std::uint32_t*>(laneBytes + kLoadCounterOffset);
+            read = true;
+        }
+    } __except (1) {
+        return;
+    }
+    std::array<char, 200> line{};
+    const int written = std::snprintf(
+        line.data(),
+        line.size(),
+        "ev=bubbleauth stage=doors held=%d lane=%p read=%d indicator=%u counter=0x%X "
+        "door_binding=%d door_counter=%d native_untracked=%d",
+        held,
+        lane,
+        read ? 1 : 0,
+        indicator,
+        counter,
+        read && indicator != 0 ? 1 : 0,
+        read && counter <= kLoadCounterDoor ? 1 : 0,
+        g_nativeUntracked.load(std::memory_order_relaxed));
     if (written > 0) {
         core::log::write(core::log::Channel::client,
                          core::log::Level::info,
@@ -157,6 +233,10 @@ __declspec(noinline) bool __fastcall content_untracked_body() noexcept {
         if (call != nullptr) {
             result = call();
         }
+        // Capture the NATIVE value before the force below. The seed machine clears a lane's seed when
+        // this reads true, so knowing what the client would answer on its own says whether the
+        // content-untracked door is even a candidate, or whether our force is the only reason it shuts.
+        g_nativeUntracked.store(result ? 1 : 0, std::memory_order_relaxed);
         const bool forced = !result && scope::active();
         result = result || forced;
         if (forced && !g_forcedSeen.exchange(true, std::memory_order_relaxed)) {
