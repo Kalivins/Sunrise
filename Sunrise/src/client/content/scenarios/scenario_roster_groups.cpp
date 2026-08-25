@@ -64,6 +64,22 @@ constexpr std::array<std::uint32_t, 1> kScopedSquadKeys = {0xef4eaa1eU};
     return false;
 }
 
+/** The one fodder encounter (courtyard_fodder_small) to prove the full-declaration path on. Its
+ *  object 0xe3797278 carries the squad (slot type 1), spawn_rule (66) and player_monitor (30) slots. */
+constexpr std::uint32_t kFullDeclTargetKey = 0xe3797278U;
+
+/**
+ * True for objects the full-declaration builder handles instead of fill_slots: the squad parent and
+ * the one target fodder encounter. Their slots are largely script-placed and carry no static
+ * descriptor, so fill_slots publishes the group short (or drops it) and the client holds the bubble
+ * because a declared record is never seeded. Seeding every declared slot by its position clears the
+ * hold. Scoped to one sensor key so the published group count and roster size stay bounded (the
+ * client's acceptance of many groups is unverified); widen once one encounter is proven to seed.
+ */
+[[nodiscard]] bool uses_full_declaration(std::uint32_t registryKey) noexcept {
+    return is_scoped_squad(registryKey) || registryKey == kFullDeclTargetKey;
+}
+
 /**
  * Records one descriptor as a slot of the object being resolved.
  * @param context Roster storage.
@@ -257,7 +273,7 @@ bool resolve_object(const reader::Source& source,
     // descriptor simply occupy the declaration positions no descriptor covers, and the full group is
     // publishable as declaration order. Compare the descriptors we DID collect against the
     // declaration at their own slotIndex, and count the declaration positions no descriptor covers.
-    if (is_scoped_squad(candidate.registryKey)) {
+    if (uses_full_declaration(candidate.registryKey)) {
         std::array<bool, layouts::kRosterSlotCapacity> covered{};
         unsigned inRange = 0;
         unsigned typeMatch = 0;
@@ -305,7 +321,7 @@ bool resolve_object(const reader::Source& source,
     }
 
     bool built = false;
-    if (is_scoped_squad(candidate.registryKey)) {
+    if (uses_full_declaration(candidate.registryKey)) {
         // DIRECTOR M0: build the FULL group from the object's declaration (object_slots), not from the
         // static descriptors. The squad_index witness confirmed a descriptor's slotIndex is its
         // declaration position (typeMatch == inRange, idx range 0..declared-1), so the ~97 script-placed
@@ -347,7 +363,7 @@ bool resolve_object(const reader::Source& source,
         // WITNESS (diagnostic): whether the scoped squad-parent group survives extraction. A drop
         // here (its slot descriptors do not all resolve from this scenario walk) means it never
         // reaches the published table, so the snapshot injection finds nothing to reference.
-        if (is_scoped_squad(candidate.registryKey)) {
+        if (uses_full_declaration(candidate.registryKey)) {
             std::array<char, core::log::kLineCapacity> dropLine{};
             const int dropLen = std::snprintf(
                 dropLine.data(),
@@ -368,7 +384,7 @@ bool resolve_object(const reader::Source& source,
         ++storage.unresolvedGroups;
         return true;
     }
-    if (is_scoped_squad(candidate.registryKey)) {
+    if (uses_full_declaration(candidate.registryKey)) {
         std::array<char, core::log::kLineCapacity> okLine{};
         const int okLen = std::snprintf(
             okLine.data(),
