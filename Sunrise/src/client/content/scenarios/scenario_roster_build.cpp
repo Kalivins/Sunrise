@@ -64,11 +64,36 @@ void note_candidate(Walk& walk,
             return;
         }
     }
-    if (walk.candidateCount == walk.candidates.size()) {
-        return;
-    }
     const layouts::RosterGroup& row = storage.groups[group];
-    Candidate& candidate = walk.candidates[walk.candidateCount++];
+    bool binds = false;
+    bool reports = false;
+    for (std::size_t slot = 0; slot < row.slotCount; ++slot) {
+        binds = binds || row.slotTypes[slot] == kSlotTypeParticipation;
+        reports = reports || row.slotTypes[slot] == kSlotTypeLifetime;
+    }
+    std::size_t place = walk.candidateCount;
+    if (place == walk.candidates.size()) {
+        // A full list still has room for a group the roster cannot do without: publishing needs one
+        // that binds the player and one that reports lifetime, and without them the destination
+        // publishes nothing at all. Take the place of a candidate that carries neither.
+        if (!binds && !reports) {
+            return;
+        }
+        place = walk.candidates.size();
+        for (std::size_t index = 0; index < walk.candidates.size(); ++index) {
+            if (!walk.candidates[index].bindsPlayer && !walk.candidates[index].reportsLifetime) {
+                place = index;
+                break;
+            }
+        }
+        if (place == walk.candidates.size()) {
+            return;
+        }
+        walk.candidates[place] = {};
+    } else {
+        ++walk.candidateCount;
+    }
+    Candidate& candidate = walk.candidates[place];
     candidate.group = group;
     candidate.key = row.registryKey;
     candidate.primaryRegistry = primary;

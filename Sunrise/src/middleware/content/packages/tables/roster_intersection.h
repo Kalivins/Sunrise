@@ -20,7 +20,13 @@ inline constexpr std::size_t kSliceSetCapacity = 64;
  * No installed destination reaches more than 2 objects carrying a wire slot type. This leaves
  * room to spare without a heap allocation.
  */
-inline constexpr std::size_t kRosterKeyCapacity = 16;
+/**
+ * Roster keys one destination may carry. The destination row and the message encoder both hold
+ * thirty-two groups, so sixteen here was the narrowest link in the chain: past it a candidate is
+ * dropped without a word, and dropping the one that binds the player costs the destination its whole
+ * roster. Matching the two capacities it feeds removes that asymmetry.
+ */
+inline constexpr std::size_t kRosterKeyCapacity = 32;
 
 static_assert(kSliceSetCapacity * kSliceSetIndexFactor == 512);
 // One bit per slice set, so the mask must cover the whole capacity.
