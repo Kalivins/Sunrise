@@ -258,8 +258,12 @@ struct FramingRoute {
  * @return True when the report framed, so an unparsable one still records its receipt.
  */
 [[nodiscard]] bool prepare_sense(const service::Request& request, ActivityPlan& plan) noexcept {
+    // A report carrying a delta frames to a bounded point and returns partial, not framed: its
+    // epoch and structure are read and only the group loop is left as a retained tail. Those are
+    // exactly the reports worth answering, so refusing anything but framed would answer the empty
+    // ones and drop every report that says something.
     const receipts::Framed framed = receipts::frame_sense_update(request);
-    if (framed.verdict != store::Verdict::framed) {
+    if (framed.verdict != store::Verdict::framed && framed.verdict != store::Verdict::partial) {
         return false;
     }
     plan.sessionId = request.accountHandle;
