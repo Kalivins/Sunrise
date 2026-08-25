@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <intrin.h>
 
 #include "../../../../core/logging/log.h"
 #include "../coordinator/network_call_coordinator.h"
@@ -27,29 +28,19 @@ std::atomic<unsigned> g_lastRegistered{0xFFFFFFFFU};
 std::atomic<unsigned> g_lastSeeded{0xFFFFFFFFU};
 
 /**
- * SEED-DOOR WITNESS (diagnostic). The native seed machine sets a lane's seeded bit through one of
- * three doors, and otherwise clears it:
- *   byte[obj+0x18] != 0                      -> seed set   (the binding indicator)
- *   A() && contentUntracked()                -> CLEAR      (what we hit today: we force the getter
- *                                                           true so the bubble applies at all)
- *   [obj+0x1c] <= 0x1ff                      -> seed set
- * The held lanes never reach a door, so read the two fields the doors test on the lane objects the
- * roster holds, plus the native (unforced) content-untracked value. That says which door is within
- * reach instead of guessing. Offsets are lane-object relative; the lane table pointer sits in the
- * roster container next to the masks. Read defensively: any bad pointer aborts the witness.
+ * CALL-SITE WITNESS (diagnostic). The native seed machine clears a lane's seed when the
+ * content-untracked getter reads true, and this hook forces exactly that value true so the bubble
+ * authority applies at all. The first `stage=force` line already proves the client's own answer is
+ * false, so the force is what shuts the seed door. Both consumers sit inside one decoder scope, so
+ * the force cannot be narrowed until their call sites are told apart. Record each distinct return
+ * address that consults the getter, as an image RVA, with the native answer and whether the scope
+ * was forcing. Return addresses are only subtracted and logged, never dereferenced.
  */
-constexpr std::size_t kLaneTableOffset = 0x10eb0;
-constexpr std::size_t kBindingIndicatorOffset = 0x18;
-constexpr std::size_t kLoadCounterOffset = 0x1c;
-constexpr std::size_t kLoadCounterDoor = 0x1ff;
-/** Report the door state a bounded number of times, so a per-message hook cannot flood the log. */
-std::atomic<unsigned> g_doorReports{0};
-constexpr unsigned kMaxDoorReports = 12;
-/** Native content-untracked value, captured before the decoder scope forces it true. */
-std::atomic<int> g_nativeUntracked{-1};
-
-/** Defined below; reports which seed door the held lanes can reach. */
-void report_doors(const void* roster, int held) noexcept;
+constexpr std::size_t kCallSiteCapacity = 8;
+std::array<std::atomic<std::uint32_t>, kCallSiteCapacity> g_callSiteRva{};
+std::atomic<unsigned> g_callSiteCount{0};
+/** Client image base, resolved once, so a return address becomes a stable RVA. */
+std::atomic<std::uintptr_t> g_imageBase{0};
 
 /** @return Set-bit count of a 32-bit word. */
 [[nodiscard]] unsigned popcount32(std::uint32_t value) noexcept {
@@ -84,7 +75,6 @@ void report_seed(const void* roster) noexcept {
     } __except (1) {
         return;
     }
-    report_doors(roster, static_cast<int>(registered) - static_cast<int>(seeded));
     if (registered == g_lastRegistered.load(std::memory_order_relaxed)
         && seeded == g_lastSeeded.load(std::memory_order_relaxed)) {
         return;
@@ -112,48 +102,41 @@ void report_seed(const void* roster) noexcept {
 }
 
 /**
- * Reports the seed-door state for the roster's lane objects while any lane is held. Reads only the
- * two fields the seed machine tests, and the native content-untracked value captured before the
- * decoder forces it. Every dereference is guarded, and a null or unreadable pointer ends the report
- * rather than risking the decode path.
- * @param roster Decoded roster container.
- * @param held How many lanes are registered but not seeded.
+ * Records one distinct getter call site as an image RVA, with the native answer and scope state.
+ * @param caller Return address of the native code that consulted the getter.
+ * @param nativeValue What the client's own getter answered, before any force.
+ * @param inScope Whether the decoder scope was forcing when this site asked.
  */
-void report_doors(const void* roster, int held) noexcept {
-    if (roster == nullptr || held <= 0
-        || g_doorReports.fetch_add(1, std::memory_order_relaxed) >= kMaxDoorReports) {
+void report_call_site(std::uintptr_t caller, bool nativeValue, bool inScope) noexcept {
+    std::uintptr_t base = g_imageBase.load(std::memory_order_relaxed);
+    if (base == 0) {
+        base = reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr));
+        g_imageBase.store(base, std::memory_order_relaxed);
+    }
+    if (base == 0 || caller <= base) {
         return;
     }
-    const void* lane = nullptr;
-    unsigned indicator = 0;
-    unsigned counter = 0;
-    bool read = false;
-    __try {
-        const auto* base = static_cast<const std::uint8_t*>(roster);
-        lane = *reinterpret_cast<void* const*>(base + kLaneTableOffset);
-        if (lane != nullptr) {
-            const auto* laneBytes = static_cast<const std::uint8_t*>(lane);
-            indicator = laneBytes[kBindingIndicatorOffset];
-            counter = *reinterpret_cast<const std::uint32_t*>(laneBytes + kLoadCounterOffset);
-            read = true;
+    const auto rva = static_cast<std::uint32_t>(caller - base);
+    const unsigned known = g_callSiteCount.load(std::memory_order_relaxed);
+    for (unsigned index = 0; index < known && index < kCallSiteCapacity; ++index) {
+        if (g_callSiteRva[index].load(std::memory_order_relaxed) == rva) {
+            return;
         }
-    } __except (1) {
+    }
+    if (known >= kCallSiteCapacity) {
         return;
     }
-    std::array<char, 200> line{};
-    const int written = std::snprintf(
-        line.data(),
-        line.size(),
-        "ev=bubbleauth stage=doors held=%d lane=%p read=%d indicator=%u counter=0x%X "
-        "door_binding=%d door_counter=%d native_untracked=%d",
-        held,
-        lane,
-        read ? 1 : 0,
-        indicator,
-        counter,
-        read && indicator != 0 ? 1 : 0,
-        read && counter <= kLoadCounterDoor ? 1 : 0,
-        g_nativeUntracked.load(std::memory_order_relaxed));
+    g_callSiteRva[known].store(rva, std::memory_order_relaxed);
+    g_callSiteCount.store(known + 1, std::memory_order_relaxed);
+    std::array<char, 160> line{};
+    const int written =
+        std::snprintf(line.data(),
+                      line.size(),
+                      "ev=bubbleauth stage=callsite n=%u rva=0x%08X native=%d scope=%d",
+                      known,
+                      rva,
+                      nativeValue ? 1 : 0,
+                      inScope ? 1 : 0);
     if (written > 0) {
         core::log::write(core::log::Channel::client,
                          core::log::Level::info,
@@ -224,6 +207,7 @@ __declspec(noinline) bool __fastcall decoder_body(void* roster,
  * @return Native state, or true only inside an admitted authority decoder call.
  */
 __declspec(noinline) bool __fastcall content_untracked_body() noexcept {
+    const auto caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
     coordinator::CallLease lease{};
     coordinator::g_callIngress(
         lease, HookSlot::contentUntrackedGetter, coordinator::ConsumerKind::none);
@@ -233,11 +217,12 @@ __declspec(noinline) bool __fastcall content_untracked_body() noexcept {
         if (call != nullptr) {
             result = call();
         }
-        // Capture the NATIVE value before the force below. The seed machine clears a lane's seed when
-        // this reads true, so knowing what the client would answer on its own says whether the
-        // content-untracked door is even a candidate, or whether our force is the only reason it shuts.
-        g_nativeUntracked.store(result ? 1 : 0, std::memory_order_relaxed);
-        const bool forced = !result && scope::active();
+        // Record which native code asked, with the answer it would have received. The seed machine
+        // and the authority apply both consult this getter inside one decoder scope, so their call
+        // sites are what tells them apart before the force can be narrowed to only the apply.
+        const bool active = scope::active();
+        report_call_site(caller, result, active);
+        const bool forced = !result && active;
         result = result || forced;
         if (forced && !g_forcedSeen.exchange(true, std::memory_order_relaxed)) {
             report_once("force");
