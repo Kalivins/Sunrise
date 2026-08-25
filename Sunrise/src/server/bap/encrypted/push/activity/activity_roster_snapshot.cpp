@@ -235,23 +235,47 @@ fill_roster(const layouts::Definition& layout, Scratch& scratch,
             }
             unsigned squad = 0;
             unsigned monitor = 0;
+            // A reference into this group names a slot by the index the roster publishes, and the
+            // full-declaration builder publishes the declaration position rather than the object's
+            // own slot index, so the blueprint's numbers do not apply. Report the positions.
+            std::array<char, 80> squadAt{};
+            std::array<char, 80> monitorAt{};
+            std::size_t squadUsed = 0;
+            std::size_t monitorUsed = 0;
             for (std::size_t slot = 0; slot < entry.slotCount; ++slot) {
                 if (entry.slotTypes[slot] == 1) {
                     ++squad;
+                    if (squadUsed + 8 < squadAt.size()) {
+                        const int put = std::snprintf(squadAt.data() + squadUsed,
+                                                      squadAt.size() - squadUsed,
+                                                      "%u,",
+                                                      static_cast<unsigned>(entry.slotIndices[slot]));
+                        squadUsed += put > 0 ? static_cast<std::size_t>(put) : 0;
+                    }
                 } else if (entry.slotTypes[slot] == 30) {
                     ++monitor;
+                    if (monitorUsed + 8 < monitorAt.size()) {
+                        const int put =
+                            std::snprintf(monitorAt.data() + monitorUsed,
+                                          monitorAt.size() - monitorUsed,
+                                          "%u,",
+                                          static_cast<unsigned>(entry.slotIndices[slot]));
+                        monitorUsed += put > 0 ? static_cast<std::size_t>(put) : 0;
+                    }
                 }
             }
             std::array<char, core::log::kLineCapacity> row{};
             const int used = std::snprintf(row.data(),
                                            row.size(),
                                            "ev=activity stage=table i=%zu key=0x%08X slots=%u "
-                                           "squad=%u monitor=%u",
+                                           "squad=%u monitor=%u squad_at=%s monitor_at=%s",
                                            index,
                                            entry.registryKey,
                                            static_cast<unsigned>(entry.slotCount),
                                            squad,
-                                           monitor);
+                                           monitor,
+                                           squadAt.data(),
+                                           monitorAt.data());
             if (used > 0) {
                 core::log::write(core::log::Channel::server,
                                  core::log::Level::debug,
