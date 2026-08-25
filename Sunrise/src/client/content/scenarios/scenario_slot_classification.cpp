@@ -7,7 +7,6 @@
 
 #include <algorithm>
 
-#include "../../../core/settings/settings.h"
 #include "internal.h"
 
 namespace sunrise::client::content::scenarios {
@@ -41,15 +40,15 @@ void record_slot(RosterStorage& storage, const tables::SlotDescriptor& descripto
 /** Fills one candidate group from the descriptors the walk found, in slot-index order. */
 bool fill_slots(RosterStorage& storage,
                 std::size_t declaredSlotCount,
+                bool allowShort,
                 layouts::RosterGroup& group) noexcept {
     // A short group is refused, not trimmed. The client registers a record per declared slot and
     // holds its whole apply back while any record in the current bubble is unseeded, so publishing
     // a group this host cannot seed in full stalls that bubble with nothing reported.
-    // Under roster_short_groups the count check is lifted: the refusal above rests on reasoning the
-    // client has never been asked to confirm, and every encounter group of the mission is short, so
-    // dropping them all is what keeps their spawn rules off the wire. What is published is still only
-    // what resolved, so each slot it names is one this host can seed.
-    const bool allowShort = core::settings::get().server.activation.rosterShortGroups;
+    // A caller may lift the count check for one object it names. Lifting it for every object floods
+    // the group table with partial rows, and the destination's own groups then no longer fit: a run
+    // with it lifted globally published no groups at all and the client waited on a world that never
+    // came. So the exception stays per-object, and what is published is still only what resolved.
     if (storage.slotsOverflowed || storage.slotCount == 0
         || (!allowShort && storage.slotCount != declaredSlotCount)) {
         return false;

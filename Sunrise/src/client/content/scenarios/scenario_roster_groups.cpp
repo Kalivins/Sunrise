@@ -3,6 +3,7 @@
 #include <cstdio>
 
 #include "../../../core/logging/log.h"
+#include "../../../core/settings/settings.h"
 #include "../../../middleware/content/packages/tables/roster_intersection.h"
 #include "../../../middleware/content/packages/tables/scenario_reader.h"
 #include "../../../middleware/content/packages/tables/slot_descriptor_reader.h"
@@ -347,7 +348,11 @@ bool resolve_object(const reader::Source& source,
             candidate.slotCount = static_cast<std::uint16_t>(declared.count);
         }
     } else {
-        built = fill_slots(storage, declared.count, candidate);
+        // Short is allowed only for the scoped encounter keys: they are the groups whose spawn
+        // rules never reach the wire, and lifting the rule for everything empties the roster.
+        const bool allowShort = core::settings::get().server.activation.rosterShortGroups
+                                && is_scoped_sensor(candidate.registryKey);
+        built = fill_slots(storage, declared.count, allowShort, candidate);
     }
     if (!built) {
         // The client registers a record per slot the object declares and refuses its whole apply

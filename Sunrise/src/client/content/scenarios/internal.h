@@ -187,6 +187,7 @@ void record_slot(RosterStorage& storage,
  */
 [[nodiscard]] bool fill_slots(RosterStorage& storage,
                               std::size_t declaredSlotCount,
+                              bool allowShort,
                               layouts::RosterGroup& group) noexcept;
 
 /** One candidate group of one destination, with what its publish order is sorted on. */
