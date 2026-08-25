@@ -24,8 +24,22 @@ std::atomic_bool g_forcedSeen{false};
 constexpr std::size_t kRegisteredMaskOffset = 0x10eb8;
 constexpr std::size_t kSeededMaskOffset = 0x10ec4;
 constexpr std::size_t kMaskWords = 4;
+
+/**
+ * SEED-DOOR FIELDS, read from the seed machine's own disassembly rather than guessed. The machine
+ * tests these two on the same container that holds the masks above:
+ *   cmp byte [container+0x18], 0     -> non-zero seeds the lane (a content binding is attached)
+ *   call A() && contentUntracked()   -> clears both masks (never taken here: the getter reads false)
+ *   cmp dword [container+0x1c], 0x1ff-> at or below seeds the lane, above skips it entirely
+ * A skipped lane is neither seeded nor cleared, which is exactly the held lane we keep seeing. Both
+ * fields sit far inside an object whose +0x10eb8 masks already read cleanly, so this adds no reach.
+ */
+constexpr std::size_t kBindingOffset = 0x18;
+constexpr std::size_t kLoadCounterOffset = 0x1c;
+constexpr std::uint32_t kLoadCounterDoor = 0x1ff;
 std::atomic<unsigned> g_lastRegistered{0xFFFFFFFFU};
 std::atomic<unsigned> g_lastSeeded{0xFFFFFFFFU};
+std::atomic<std::uint32_t> g_lastCounter{0xFFFFFFFFU};
 
 /**
  * CALL-SITE WITNESS (diagnostic). The native seed machine clears a lane's seed when the
@@ -61,6 +75,8 @@ void report_seed(const void* roster) noexcept {
     unsigned seeded = 0;
     std::uint32_t registeredWords[kMaskWords] = {};
     std::uint32_t seededWords[kMaskWords] = {};
+    unsigned binding = 0;
+    std::uint32_t loadCounter = 0;
     __try {
         const auto* base = static_cast<const std::uint8_t*>(roster);
         const auto* registeredMask =
@@ -72,28 +88,34 @@ void report_seed(const void* roster) noexcept {
             registered += popcount32(registeredWords[word]);
             seeded += popcount32(seededWords[word]);
         }
+        binding = base[kBindingOffset];
+        loadCounter = *reinterpret_cast<const std::uint32_t*>(base + kLoadCounterOffset);
     } __except (1) {
         return;
     }
     if (registered == g_lastRegistered.load(std::memory_order_relaxed)
-        && seeded == g_lastSeeded.load(std::memory_order_relaxed)) {
+        && seeded == g_lastSeeded.load(std::memory_order_relaxed)
+        && loadCounter == g_lastCounter.load(std::memory_order_relaxed)) {
         return;
     }
     g_lastRegistered.store(registered, std::memory_order_relaxed);
     g_lastSeeded.store(seeded, std::memory_order_relaxed);
+    g_lastCounter.store(loadCounter, std::memory_order_relaxed);
     std::array<char, 160> line{};
     const int written = std::snprintf(
         line.data(),
         line.size(),
-        "ev=bubbleauth stage=seed registered=%u seeded=%u held=%d reg0=0x%08X reg1=0x%08X "
-        "seed0=0x%08X seed1=0x%08X",
+        "ev=bubbleauth stage=seed registered=%u seeded=%u held=%d reg0=0x%08X seed0=0x%08X "
+        "binding=%u counter=%u door_binding=%d door_counter=%d",
         registered,
         seeded,
         static_cast<int>(registered) - static_cast<int>(seeded),
         registeredWords[0],
-        registeredWords[1],
         seededWords[0],
-        seededWords[1]);
+        binding,
+        loadCounter,
+        binding != 0 ? 1 : 0,
+        loadCounter <= kLoadCounterDoor ? 1 : 0);
     if (written > 0) {
         core::log::write(core::log::Channel::client,
                          core::log::Level::info,
