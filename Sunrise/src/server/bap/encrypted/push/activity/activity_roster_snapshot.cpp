@@ -453,6 +453,7 @@ RosterOutcome build_roster_snapshot(Session& session,
     // One squad-body optional and the reference it opens. Which optional names the spawn rule is not
     // recovered, so the choice is swept from settings rather than fixed here.
     snapshot.squadReferenceEnabled = defaults.squadReferenceEnabled;
+    snapshot.squadReferenceSweep = defaults.squadReferenceSweep;
     snapshot.squadReferenceOptional = defaults.squadReferenceOptional;
     snapshot.squadReferenceKey = defaults.squadReferenceKey;
     snapshot.squadReferenceSlotType = defaults.squadReferenceSlotType;

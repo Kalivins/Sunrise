@@ -91,6 +91,7 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
     bool hasMonitorBodySlotIndex = false;
     bool hasMonitorBodyValue = false;
     bool hasSquadReferenceEnabled = false;
+    bool hasSquadReferenceSweep = false;
     bool hasSquadReferenceOptional = false;
     bool hasSquadReferenceKey = false;
     bool hasSquadReferenceSlotType = false;
@@ -194,6 +195,11 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
                 return false;
             }
             hasSquadReferenceEnabled = true;
+        } else if (key == "squad_reference_sweep") {
+            if (hasSquadReferenceSweep || !boolean(output.squadReferenceSweep)) {
+                return false;
+            }
+            hasSquadReferenceSweep = true;
         } else if (key == "squad_reference_optional") {
             std::uint64_t value = 0;
             if (hasSquadReferenceOptional || !unsigned_integer(value) || value > 18) {

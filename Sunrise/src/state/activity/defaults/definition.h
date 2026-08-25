@@ -111,6 +111,8 @@ struct ActivityDefaults final {
      * recovered, so it is chosen here and swept without a rebuild. Off by default.
      */
     bool squadReferenceEnabled{};
+    /** Spread the six references across the squad slots by index, so one run tries them all. */
+    bool squadReferenceSweep{};
     std::uint8_t squadReferenceOptional{};
     std::uint32_t squadReferenceKey{};
     std::uint8_t squadReferenceSlotType{};

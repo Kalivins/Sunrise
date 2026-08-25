@@ -152,6 +152,9 @@ struct Snapshot final {
      * and which one names the spawn rule is not recovered, so the choice is swept from settings.
      */
     bool squadReferenceEnabled{};
+    /** Give each squad body a different one of the six references, keyed by its slot index, so one
+     *  run tries them all instead of one per launch. */
+    bool squadReferenceSweep{};
     std::uint8_t squadReferenceOptional{};
     std::uint32_t squadReferenceKey{};
     std::uint8_t squadReferenceSlotType{};
@@ -309,7 +312,10 @@ bubble_bits(std::span<const BubbleSubBlock> subBlocks) noexcept {
  * @return Body bits, or zero for a seed-only block.
  */
 [[nodiscard]] std::size_t
-auth_body_bits(const Snapshot& snapshot, std::uint8_t slotType, bool carriesPlayerKey) noexcept;
+auth_body_bits(const Snapshot& snapshot,
+                                       std::uint8_t slotType,
+                                       std::uint16_t slotIndex,
+                                       bool carriesPlayerKey) noexcept;
 
 /**
  * Writes one slot's auth body.

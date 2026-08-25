@@ -72,12 +72,28 @@ constexpr std::size_t kSquadLeadingOptionals = 18;
     if (!snapshot.squadReferenceEnabled) {
         return false;
     }
+    if (snapshot.squadReferenceSweep) {
+        return true;
+    }
     for (const std::uint8_t optional : kSquadReferenceOptionals) {
         if (optional == snapshot.squadReferenceOptional) {
             return true;
         }
     }
     return false;
+}
+
+/**
+ * Which optional this block opens. Sweeping spreads the six references across the squad slots by
+ * their own index, so one body per reference goes out together and a single run tries them all;
+ * otherwise every squad opens the one the settings name.
+ */
+[[nodiscard]] std::uint8_t squad_reference_optional(const Snapshot& snapshot,
+                                                    std::uint16_t slotIndex) noexcept {
+    if (!snapshot.squadReferenceSweep) {
+        return snapshot.squadReferenceOptional;
+    }
+    return kSquadReferenceOptionals[slotIndex % kSquadReferenceOptionals.size()];
 }
 /**
  * Type 30 (player monitor) auth body, schema 0x80809532. The slot descriptor names each slot's auth
@@ -195,7 +211,10 @@ constexpr std::size_t kMonitorBodyBits = std::size_t{kMonitorKeyBits} + kSlotTyp
 
 /** Reports how many bits of auth body one slot carries. */
 std::size_t
-auth_body_bits(const Snapshot& snapshot, std::uint8_t slotType, bool carriesPlayerKey) noexcept {
+auth_body_bits(const Snapshot& snapshot,
+               std::uint8_t slotType,
+               std::uint16_t slotIndex,
+               bool carriesPlayerKey) noexcept {
     if (slotType == kSlotTypeParticipation) {
         return carriesPlayerKey
                    ? kParticipationBits + (snapshot.hasRegion ? kParticipationRegionBits : 0)
@@ -243,9 +262,10 @@ auth_body_bits(const Snapshot& snapshot, std::uint8_t slotType, bool carriesPlay
 bool write_auth_body(bits::Writer& writer,
                      const Snapshot& snapshot,
                      std::uint8_t slotType,
+                     std::uint16_t slotIndex,
                      bool carriesPlayerKey) noexcept {
     const std::size_t start = writer.bit_count();
-    const std::size_t expected = auth_body_bits(snapshot, slotType, carriesPlayerKey);
+    const std::size_t expected = auth_body_bits(snapshot, slotType, slotIndex, carriesPlayerKey);
     bool encoded = true;
     if (slotType == kSlotTypeParticipation && carriesPlayerKey) {
         encoded = write_participation(writer, snapshot);
@@ -270,7 +290,7 @@ bool write_auth_body(bits::Writer& writer,
         // the question this answers is whether a seeded squad slot with a valid body instantiates.
         const bool reference = squad_reference_selected(snapshot);
         for (std::size_t index = 0; encoded && index < kSquadLeadingOptionals; ++index) {
-            const bool open = reference && index == snapshot.squadReferenceOptional;
+            const bool open = reference && index == squad_reference_optional(snapshot, slotIndex);
             encoded = writer.write(open ? 1U : 0U, kPresenceWidth);
             if (encoded && open) {
                 // The reference the optional opens: registry key, then the slot type and index at
