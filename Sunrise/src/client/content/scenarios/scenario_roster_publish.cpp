@@ -40,12 +40,21 @@ void publish_top_level(Walk& walk, layouts::Definition& row) noexcept {
     }
     std::array<Candidate, tables::kRosterKeyCapacity> kept{};
     std::size_t keptCount = 0;
-    for (std::size_t index = 0; index < walk.candidateCount; ++index) {
-        const Candidate& candidate = walk.candidates[index];
-        const auto last = safe.begin() + static_cast<std::ptrdiff_t>(safeCount);
-        const bool keep = std::find(safe.begin(), last, candidate.key) != last;
-        if (keep && keptCount < kept.size()) {
-            kept[keptCount++] = candidate;
+    // The two candidates that make a roster usable go in first. Filling in walk order lets ordinary
+    // groups take every place and push them out, and a roster without them publishes nothing at all,
+    // so the destination loses its whole roster to candidates it could have done without.
+    for (int pass = 0; pass < 2; ++pass) {
+        for (std::size_t index = 0; index < walk.candidateCount; ++index) {
+            const Candidate& candidate = walk.candidates[index];
+            const bool essential = candidate.bindsPlayer || candidate.reportsLifetime;
+            if (essential != (pass == 0)) {
+                continue;
+            }
+            const auto last = safe.begin() + static_cast<std::ptrdiff_t>(safeCount);
+            const bool keep = std::find(safe.begin(), last, candidate.key) != last;
+            if (keep && keptCount < kept.size()) {
+                kept[keptCount++] = candidate;
+            }
         }
     }
     std::sort(kept.begin(), kept.begin() + static_cast<std::ptrdiff_t>(keptCount), publishes_first);
