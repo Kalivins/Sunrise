@@ -21,6 +21,10 @@ constexpr std::size_t kChainDepthLimit = 8;
  *  not every squad the mission declares at once. */
 constexpr std::uint8_t kSquadSlotType = 1;
 constexpr unsigned kSquadAuthLimit = 4;
+/** Monitor slot type, and how many of them get an auth body. The group carries five, few enough to
+ *  publish whole; the encoder writes the type-30 schema the slot descriptor names. */
+constexpr std::uint8_t kMonitorSlotType = 30;
+constexpr unsigned kMonitorAuthLimit = 5;
 
 /**
  * SCOPED SENSOR PROBE (diagnostic). Chosen's sensor/squad objects (type-30 slots) that the roster
@@ -315,6 +319,7 @@ bool resolve_object(const reader::Source& source,
         // a squad come in a later step; here the goal is only that the parent seeds without a hold.
         built = declared.count > 0 && declared.count <= layouts::kRosterSlotCapacity;
         unsigned squadBodies = 0;
+        unsigned monitorBodies = 0;
         for (std::uint64_t index = 0; built && index < declared.count; ++index) {
             tables::Slot declaredSlot{};
             if (!tables::object_slot_at(storage.object, declared, index, declaredSlot)
@@ -323,13 +328,17 @@ bool resolve_object(const reader::Source& source,
                 break;
             }
             candidate.slotTypes[index] = static_cast<std::uint8_t>(declaredSlot.type);
-            // M1: give the auth flag to the first few squad slots so the snapshot writes each a body
-            // that asks the client to instantiate it. Every other slot stays seed-only, and the cap
-            // keeps the first pass to a handful of squads rather than the whole mission at once.
+            // Give the auth flag to the slots this encoder can write a body for, so the snapshot
+            // carries authority rather than a seed. Squads ask the client to instantiate them;
+            // monitors carry the type-30 body their slot descriptor names. Both are capped, so a
+            // first pass authors a handful rather than every slot the mission declares.
             std::uint8_t flags = 0;
             if (declaredSlot.type == kSquadSlotType && squadBodies < kSquadAuthLimit) {
                 flags = layouts::kSlotAuthFlag;
                 ++squadBodies;
+            } else if (declaredSlot.type == kMonitorSlotType && monitorBodies < kMonitorAuthLimit) {
+                flags = layouts::kSlotAuthFlag;
+                ++monitorBodies;
             }
             candidate.slotFlags[index] = flags;
             candidate.slotIndices[index] = static_cast<std::uint16_t>(index);
