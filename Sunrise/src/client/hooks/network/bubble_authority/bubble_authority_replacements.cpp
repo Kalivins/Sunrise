@@ -7,6 +7,7 @@
 #include <intrin.h>
 
 #include "../../../../core/logging/log.h"
+#include "../../../../core/settings/settings.h"
 #include "../coordinator/network_call_coordinator.h"
 #include "../platform.h"
 #include "scope/bubble_authority_scope.h"
@@ -37,6 +38,8 @@ constexpr std::size_t kMaskWords = 4;
 constexpr std::size_t kBindingOffset = 0x18;
 constexpr std::size_t kLoadCounterOffset = 0x1c;
 constexpr std::uint32_t kLoadCounterDoor = 0x1ff;
+/** The content object the binding creator attaches, written beside the binding byte it sets. */
+constexpr std::size_t kContentObjectOffset = 0x10;
 std::atomic<unsigned> g_lastRegistered{0xFFFFFFFFU};
 std::atomic<unsigned> g_lastSeeded{0xFFFFFFFFU};
 std::atomic<std::uint32_t> g_lastCounter{0xFFFFFFFFU};
@@ -187,6 +190,56 @@ using Decoder = bool(__fastcall*)(void*, void*, void*);
 using ContentUntracked = bool(__fastcall*)();
 
 /**
+ * Opens the seed machine's first door, behind reconstruct_mission_policy so it is off by default.
+ *
+ * The machine seeds a lane when `byte[container+0x18]` is non-zero, and otherwise falls through to a
+ * load counter that reads -1 here, which skips the lane and leaves it held forever. Measurement shows
+ * the binding byte is always zero: no content object is bound to the held bubble. Writing the byte
+ * tells the client a binding exists.
+ *
+ * That is a lie the client can act on, so it is guarded: the write happens only when the container
+ * already carries a content-object pointer at +0x10. With a real object present, claiming it is bound
+ * is a far smaller step than inventing one, and a null pointer would be the crash this guard exists
+ * to avoid. The state written is the client's own, and a fresh decode rebuilds it.
+ * @param roster Decoded roster container.
+ */
+void try_open_seed_door(void* roster) noexcept {
+    if (roster == nullptr || !core::settings::get().server.activation.reconstructMissionPolicy) {
+        return;
+    }
+    static std::atomic_bool g_doorReported{false};
+    const void* content = nullptr;
+    unsigned before = 0;
+    bool wrote = false;
+    __try {
+        auto* base = static_cast<std::uint8_t*>(roster);
+        content = *reinterpret_cast<void* const*>(base + kContentObjectOffset);
+        before = base[kBindingOffset];
+        if (content != nullptr && before == 0) {
+            base[kBindingOffset] = 1;
+            wrote = true;
+        }
+    } __except (1) {
+        return;
+    }
+    if (g_doorReported.exchange(true, std::memory_order_relaxed)) {
+        return;
+    }
+    std::array<char, 160> line{};
+    const int written = std::snprintf(line.data(),
+                                      line.size(),
+                                      "ev=bubbleauth stage=door result=%s content=%p binding=%u",
+                                      wrote ? "opened" : "held",
+                                      content,
+                                      before);
+    if (written > 0) {
+        core::log::write(core::log::Channel::client,
+                         core::log::Level::info,
+                         {line.data(), static_cast<std::size_t>(written)});
+    }
+}
+
+/**
  * Runs the native roster-prefix decoder inside one thread-local authority scope.
  * @param roster Client roster container borrowed by the native decoder.
  * @param bitStream Native bit reader borrowed for this call.
@@ -207,6 +260,8 @@ __declspec(noinline) bool __fastcall decoder_body(void* roster,
         if (!g_decoderSeen.exchange(true, std::memory_order_relaxed)) {
             report_once("decode");
         }
+        // Before the native decode, so the byte is already set when the seed machine consults it.
+        try_open_seed_door(roster);
     }
     __try {
         if (call != nullptr) {
