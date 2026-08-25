@@ -56,6 +56,16 @@ struct Settings {
      * visible enemy; it keeps the world driven so a peer can bind and hold.
      */
     bool reconstructMissionPolicy{false};
+    /**
+     * Publishes a roster group whose declared slots are only partly resolved, instead of dropping it.
+     * Extraction refuses a short group on the reasoning that the client registers a record per
+     * declared slot and holds its whole apply while one stays unseeded. That reasoning has never been
+     * tested: every group published so far resolved in full, so the short case has never reached the
+     * client. The mission's encounter groups are all short, so this is what decides whether they can
+     * be published at all. A wrong answer stalls the bubble and the mission does not finish loading,
+     * which is why it is off by default.
+     */
+    bool rosterShortGroups{false};
 };
 
 } // namespace sunrise::core::settings::server::activation

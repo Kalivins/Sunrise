@@ -58,6 +58,11 @@ bool Parser::activation_settings(server::activation::Settings& output) noexcept 
                 return false;
             }
             candidate.reconstructMissionPolicy = value;
+        } else if (key == "roster_short_groups") {
+            if (!boolean(value)) {
+                return false;
+            }
+            candidate.rosterShortGroups = value;
         } else if (!skip_value(0)) {
             return false;
         }
