@@ -1,14 +1,18 @@
 #include <Windows.h>
 
 #include <algorithm>
+#include <array>
+#include <cstdio>
 #include <string_view>
 
+#include "../../../../../core/logging/log.h"
 #include "../../../../../state/account/account_state.h"
 #include "../../../../../state/activity/defaults/activity_defaults_snapshot.h"
 #include "../../../../../state/activity/destination/activity_destination_spawn_binding.h"
 #include "../../../../../state/activity/membership/activity_membership_query.h"
 #include "../../../../../state/activity/runtime.h"
 #include "../../../../../state/build_data/runtime.h"
+#include "../../../../../state/build_data/scenarios/scenario_catalog.h"
 #include "../../../../../state/runtime/runtime.h"
 #include "activity_arrival.h"
 #include "internal.h"
@@ -189,6 +193,34 @@ fill_roster(const layouts::Definition& layout, Scratch& scratch,
                 std::span<const std::uint8_t>(group.slotFlags.data(), group.slotCount);
             roster.groups[index].slotIndices =
                 std::span<const std::uint16_t>(group.slotIndices.data(), group.slotCount);
+        }
+    }
+    // INJECTION WITNESS (diagnostic). The injection is silent when it does not fire, and its four
+    // conditions fail for different reasons: a key absent from the extracted table means extraction
+    // dropped the object, while a key present but skipped means one of the guards refused. Report the
+    // table size, whether the key resolved, and how many slots it carries, so the next step is chosen
+    // from the answer instead of guessed. Read-only; logged once per push.
+    {
+        layouts::RosterGroup probe{};
+        const bool resolved =
+            state::build_data::find_roster_group_by_key(defaults.squadPlaceKey, probe);
+        std::array<char, core::log::kLineCapacity> line{};
+        const int written = std::snprintf(
+            line.data(),
+            line.size(),
+            "ev=activity stage=inject key=0x%08X enabled=%d region_ok=%d already=%d resolved=%d "
+            "slots=%u table=%zu",
+            defaults.squadPlaceKey,
+            defaults.squadPlaceEnabled ? 1 : 0,
+            regionMatches ? 1 : 0,
+            alreadyPublished ? 1 : 0,
+            resolved ? 1 : 0,
+            static_cast<unsigned>(probe.slotCount),
+            layouts::group_count());
+        if (written > 0) {
+            core::log::write(core::log::Channel::server,
+                             core::log::Level::debug,
+                             {line.data(), static_cast<std::size_t>(written)});
         }
     }
     roster.bubbleSubBlocks = fill_sub_blocks(layout, scratch, roster);
