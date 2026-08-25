@@ -101,9 +101,7 @@ namespace {
                 scratch, session, activity, key, nonce, response, written);
         }
     }
-    // A sensor report answers the same way a region move does: the client has just told us what its
-    // encounter objects see, and the authority it acts on should not wait a whole keepalive slice.
-    if (activity.regionMoved || activity.senseReported) {
+    if (activity.regionMoved) {
         staged = push::activity::append_roster_notification(
                      session, scratch, key, nonce, response, written, false)
                  || staged;
@@ -133,6 +131,13 @@ bool stage_notifications(Session& session,
                          std::array<std::byte, state::kBapNonceSize>& nonce,
                          std::span<std::byte> response,
                          std::size_t& written) noexcept {
+    // A sensor report delivers no message of its own, so it reaches none of the branches below. It
+    // still deserves an answer: the client has just said what its encounter objects see, and the
+    // authority it acts on should not wait out a whole keepalive slice.
+    if (activity.senseReported) {
+        return push::activity::append_roster_notification(
+            session, scratch, key, nonce, response, written, false);
+    }
     // Each encoder refuses an absent session itself, so a plan that delivers nothing needs no
     // session at all. Message type 52 is the one that arrives on an unallocated link.
     if (activity.delivery == activity_message::Delivery::joinNotifications) {
