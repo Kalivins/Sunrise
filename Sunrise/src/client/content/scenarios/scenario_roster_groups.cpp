@@ -20,7 +20,7 @@ constexpr std::size_t kChainDepthLimit = 8;
  *  pass. Capped so a seeded squad-parent instantiates a handful of squads to prove the mechanism,
  *  not every squad the mission declares at once. */
 constexpr std::uint8_t kSquadSlotType = 1;
-constexpr unsigned kSquadAuthLimit = 4;
+constexpr unsigned kSquadAuthLimit = 32;
 /** Monitor slot type, and how many of them get an auth body. The group carries five, few enough to
  *  publish whole; the encoder writes the type-30 schema the slot descriptor names. */
 constexpr std::uint8_t kMonitorSlotType = 30;

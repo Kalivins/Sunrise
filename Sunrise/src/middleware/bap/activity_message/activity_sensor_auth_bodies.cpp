@@ -95,6 +95,20 @@ constexpr std::size_t kSquadLeadingOptionals = 18;
     }
     return kSquadReferenceOptionals[slotIndex % kSquadReferenceOptionals.size()];
 }
+
+/**
+ * The body's two fixed fields, five bits together. Their meaning is not recovered and a command that
+ * places a squad would live in exactly such a field, so sweeping spreads their thirty-two values
+ * across the squad slots alongside the references: one run then covers a block of the pair instead
+ * of one value per launch.
+ */
+[[nodiscard]] std::uint64_t squad_fixed_value(const Snapshot& snapshot,
+                                              std::uint16_t slotIndex) noexcept {
+    if (!snapshot.squadReferenceSweep) {
+        return snapshot.squadPlaceValue;
+    }
+    return (slotIndex / kSquadReferenceOptionals.size()) % 32U;
+}
 /**
  * Type 30 (player monitor) auth body, schema 0x80809532. The slot descriptor names each slot's auth
  * schema at its own offset 72, so this is read from the content rather than inferred: the same field
@@ -301,8 +315,9 @@ bool write_auth_body(bits::Writer& writer,
                                     kSlotIndexWidth);
             }
         }
-        encoded = encoded && writer.write(snapshot.squadPlaceValue & 0x3U, 2)
-                  && writer.write((snapshot.squadPlaceValue >> 2) & 0x7U, 3)
+        const std::uint64_t fixed = squad_fixed_value(snapshot, slotIndex);
+        encoded = encoded && writer.write(fixed & 0x3U, 2)
+                  && writer.write((fixed >> 2) & 0x7U, 3)
                   && writer.write(0, kPresenceWidth);
     } else if (slotType == kSlotTypeMonitor && snapshot.monitorBodyEnabled) {
         // Schema 0x80809532 in wire order: the reference triple, then the trailing value. Type and
