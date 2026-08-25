@@ -68,6 +68,12 @@ struct ActivityPlan final {
      * It is the only start signal on the wire, and the roster's faster cadence runs off it.
      */
     bool transitionStarted{};
+    /**
+     * Set when the client reported its authored sensors. A report is the only edge the client offers
+     * on its own encounter state, and the documented answer to one is an authority publication that
+     * is immediately due rather than one that waits for the next keepalive slice.
+     */
+    bool senseReported{};
     Delivery delivery{};
     MutationDomain mutationDomain{};
     BindingIntent bindingIntent{};

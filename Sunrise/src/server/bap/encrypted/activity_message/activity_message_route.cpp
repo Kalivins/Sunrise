@@ -247,6 +247,28 @@ struct FramingRoute {
     receipts::Framed (*frame)(const service::Request&) noexcept;
 };
 
+/**
+ * Prepares one sensor report so the authority answer does not wait for the next keepalive.
+ * The client reports its authored sensors only once its encounter objects are published, and a
+ * report is the single edge it offers on their state. Framing it and stopping there, as this route
+ * did, leaves that edge unanswered. Parse it for the receipt, then ask for the roster the same way a
+ * region move does: the report is the trigger, the roster is the answer.
+ * @param request Validated envelope.
+ * @param plan Receives the session and the request to publish authority now.
+ * @return True when the report framed, so an unparsable one still records its receipt.
+ */
+[[nodiscard]] bool prepare_sense(const service::Request& request, ActivityPlan& plan) noexcept {
+    const receipts::Framed framed = receipts::frame_sense_update(request);
+    if (framed.verdict != store::Verdict::framed) {
+        return false;
+    }
+    plan.sessionId = request.accountHandle;
+    plan.senseReported = true;
+    plan.delivery = Delivery::none;
+    plan.mutationDomain = MutationDomain::none;
+    return true;
+}
+
 /** Frames one abandon, which trails a reason after the mask. */
 [[nodiscard]] receipts::Framed frame_abandon(const service::Request& request) noexcept {
     return receipts::frame_authority_release(request, true);
@@ -258,8 +280,7 @@ struct FramingRoute {
 }
 
 /** Every message type this route frames and records without changing State. */
-constexpr std::array<FramingRoute, 22> kFramingRoutes{{
-    {service::sense_update::kMessageType, receipts::frame_sense_update},
+constexpr std::array<FramingRoute, 21> kFramingRoutes{{
     {kLocalActivityHostMessageType, receipts::frame_route_misuse},
     {telemetry::kReservationRequestType, receipts::frame_reservation_request},
     {ledger::kReleaseReservationType, receipts::frame_reservation_release},
@@ -336,6 +357,8 @@ bool process(const ActivityClientBinding& binding,
         prepared = prepare_grant(request, plan);
     } else if (request.messageType == service::entity_slots::kRequestMessageType) {
         prepared = prepare_release(request, plan);
+    } else if (request.messageType == service::sense_update::kMessageType) {
+        prepared = prepare_sense(request, plan);
     } else if (request.messageType == service::state_refresh::kMessageType) {
         prepared = membership::prepare_refresh(request, plan);
     } else if (request.messageType == service::client_identity::kMessageType) {

@@ -101,7 +101,9 @@ namespace {
                 scratch, session, activity, key, nonce, response, written);
         }
     }
-    if (activity.regionMoved) {
+    // A sensor report answers the same way a region move does: the client has just told us what its
+    // encounter objects see, and the authority it acts on should not wait a whole keepalive slice.
+    if (activity.regionMoved || activity.senseReported) {
         staged = push::activity::append_roster_notification(
                      session, scratch, key, nonce, response, written, false)
                  || staged;
