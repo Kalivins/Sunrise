@@ -203,13 +203,71 @@ template <std::size_t N>
     return found ? module : nullptr;
 }
 
+/** Rows written by the recorder are numbered from this, so a table stays readable. */
+std::atomic<unsigned> g_recorded{0};
+
+/**
+ * Builds the table path once, so the recorder and the loader cannot disagree about where it lives.
+ * @param output Receives the full path.
+ * @return True when the path resolved.
+ */
+[[nodiscard]] bool table_path(core::path::Buffer& output) noexcept {
+    HMODULE module = own_module();
+    return module != nullptr && core::path::artifact_directory(module, output)
+           && core::path::append(output, kTableSuffix);
+}
+
 } // namespace
+
+bool record_here() noexcept {
+    std::array<float, 3> player{};
+    if (!teleport::current_position(player)) {
+        report("ev=encounter stage=record result=noposition");
+        return false;
+    }
+    core::path::Buffer path;
+    if (!table_path(path)) {
+        report("ev=encounter stage=record result=nopath");
+        return false;
+    }
+    const HANDLE file = CreateFileW(path.chars.data(),
+                                    FILE_APPEND_DATA,
+                                    FILE_SHARE_READ,
+                                    nullptr,
+                                    OPEN_ALWAYS,
+                                    FILE_ATTRIBUTE_NORMAL,
+                                    nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        report("ev=encounter stage=record result=unwritable");
+        return false;
+    }
+    const unsigned ordinal = g_recorded.fetch_add(1, std::memory_order_relaxed) + 1;
+    std::array<char, 192> row{};
+    // The combatant stays unresolved: which enemy belongs here is a decision, and a guessed name
+    // would sit in a file whose other rows are extracted fact.
+    const int written = std::snprintf(row.data(),
+                                      row.size(),
+                                      "recorded_%u | ? | %.3f %.3f %.3f | 0.0000 0.0000 0.0000 1.0000\r\n",
+                                      ordinal,
+                                      static_cast<double>(player[0]),
+                                      static_cast<double>(player[1]),
+                                      static_cast<double>(player[2]));
+    DWORD put = 0;
+    const bool ok = written > 0
+                    && WriteFile(file, row.data(), static_cast<DWORD>(written), &put, nullptr) != 0;
+    CloseHandle(file);
+    report("ev=encounter stage=record result=%s row=recorded_%u pos=%.1f,%.1f,%.1f",
+           ok ? "ok" : "fail",
+           ordinal,
+           static_cast<double>(player[0]),
+           static_cast<double>(player[1]),
+           static_cast<double>(player[2]));
+    return ok;
+}
 
 bool load() noexcept {
     core::path::Buffer tablePath;
-    HMODULE module = own_module();
-    if (module == nullptr || !core::path::artifact_directory(module, tablePath)
-        || !core::path::append(tablePath, kTableSuffix)) {
+    if (!table_path(tablePath)) {
         report("ev=encounter stage=load result=nopath");
         return false;
     }
@@ -279,6 +337,15 @@ std::size_t placed_count() noexcept {
 
 void service() noexcept {
     const core::settings::client::Settings& client = core::settings::get().client;
+    // The recorder answers even when placement is off: authoring a table and populating from one are
+    // separate jobs, and needing the second to do the first would place squads over the surveyor.
+    const bool down = (GetAsyncKeyState(VK_F6) & 0x8000) != 0;
+    static bool wasDown = false;
+    if (down && !wasDown) {
+        (void)record_here();
+    }
+    wasDown = down;
+
     if (!client.encounterPlacementEnabled || !spawn::ready()) {
         return;
     }

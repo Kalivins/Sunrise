@@ -22,6 +22,12 @@ namespace sunrise::client::hooks::spawn::encounter {
 /** Drops every loaded row and forgets what was already placed. */
 void clear() noexcept;
 
+/**
+ * Appends the player position to the authored table, as a row waiting for its combatant.
+ * @return True when the row reached the file.
+ */
+[[nodiscard]] bool record_here() noexcept;
+
 /** Rows loaded from the authored tables. */
 [[nodiscard]] std::size_t row_count() noexcept;
 
