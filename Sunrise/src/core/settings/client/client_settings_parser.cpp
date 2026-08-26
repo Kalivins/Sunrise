@@ -15,6 +15,7 @@ bool Parser::client_settings(client::Settings& output) noexcept {
     bool hasRegionPrivate = false;
     bool hasPinReplicatedRecord = false;
     bool hasEncounterPlacementEnabled = false;
+    bool hasEncounterPlacementRadius = false;
     bool hasHoldSpawn = false;
     bool hasSpawnHoldMs = false;
     if (consume('}')) {
@@ -60,6 +61,14 @@ bool Parser::client_settings(client::Settings& output) noexcept {
                 return false;
             }
             hasEncounterPlacementEnabled = true;
+        } else if (key == "encounter_placement_radius") {
+            std::uint64_t value = 0;
+            if (hasEncounterPlacementRadius || !unsigned_integer(value) || value == 0
+                || value > client::kMaximumEncounterPlacementRadius) {
+                return false;
+            }
+            candidate.encounterPlacementRadius = static_cast<std::uint32_t>(value);
+            hasEncounterPlacementRadius = true;
         } else if (key == "hold_spawn") {
             if (hasHoldSpawn || !boolean(candidate.holdSpawn)) {
                 return false;

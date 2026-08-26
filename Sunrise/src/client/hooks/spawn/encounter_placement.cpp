@@ -32,8 +32,6 @@ constexpr std::size_t kTableCapacity = 256 * 1024;
 constexpr std::size_t kRowCapacity = 512;
 /** A combatant of this name is a row whose content named its enemy by hash, not by base name. */
 constexpr std::string_view kUnresolvedCombatant = "?";
-/** Metres from an authored position at which its squad is placed. */
-constexpr float kPlacementRadius = 120.0F;
 
 struct Row {
     std::array<char, 64> name{};
@@ -288,7 +286,8 @@ void service() noexcept {
     if (!teleport::current_position(player)) {
         return;
     }
-    constexpr float radiusSquared = kPlacementRadius * kPlacementRadius;
+    const float radius = static_cast<float>(client.encounterPlacementRadius);
+    const float radiusSquared = radius * radius;
 
     // Periodic witness. A service that never runs and one that runs but matches nothing look the
     // same in an empty log, so report the player position against the closest authored row.

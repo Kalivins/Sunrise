@@ -7,6 +7,11 @@
 
 namespace sunrise::core::settings::client {
 
+/** Wide enough to cover one encounter without reaching the next. */
+inline constexpr std::uint32_t kDefaultEncounterPlacementRadius = 150;
+/** Beyond this a table stops being proximity-driven and places its whole mission at once. */
+inline constexpr std::uint32_t kMaximumEncounterPlacementRadius = 100'000;
+
 /** A load this long has stopped making progress, so the spawn stops waiting for it. */
 inline constexpr std::uint64_t kDefaultSpawnHoldMs = 30'000;
 /** A load past this is a hang, not a slow machine, and holding the spawn would never end. */
@@ -53,6 +58,11 @@ struct Settings {
      * because it puts combatants in the world that nothing yet despawns.
      */
     bool encounterPlacementEnabled{false};
+    /**
+     * Metres from an authored position at which its squad is placed. The content chooses how far
+     * apart a mission spreads its encounters, so no compiled constant is right for every table.
+     */
+    std::uint32_t encounterPlacementRadius{kDefaultEncounterPlacementRadius};
     /** How long the spawn waits for a load. `hold_spawn` decides whether it waits at all. */
     std::uint64_t spawnHoldMs{kDefaultSpawnHoldMs};
 };
