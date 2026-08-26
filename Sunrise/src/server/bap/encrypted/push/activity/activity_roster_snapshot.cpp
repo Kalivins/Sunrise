@@ -273,6 +273,32 @@ fill_roster(const layouts::Definition& layout, Scratch& scratch,
                     }
                 }
             }
+            // An encounter group's own layout: a reference into it has to name one of these, and
+            // the counts alone cannot say which index carries which type.
+            if (monitor > 0 && entry.slotCount <= 20) {
+                std::array<char, core::log::kLineCapacity> pairs{};
+                std::size_t used = 0;
+                for (std::size_t slot = 0; slot < entry.slotCount && used + 12 < pairs.size();
+                     ++slot) {
+                    const int put = std::snprintf(pairs.data() + used,
+                                                  pairs.size() - used,
+                                                  "%u/%u ",
+                                                  static_cast<unsigned>(entry.slotTypes[slot]),
+                                                  static_cast<unsigned>(entry.slotIndices[slot]));
+                    used += put > 0 ? static_cast<std::size_t>(put) : 0;
+                }
+                std::array<char, core::log::kLineCapacity> line2{};
+                const int n = std::snprintf(line2.data(),
+                                            line2.size(),
+                                            "ev=activity stage=layout key=0x%08X types=%s",
+                                            entry.registryKey,
+                                            pairs.data());
+                if (n > 0) {
+                    core::log::write(core::log::Channel::server,
+                                     core::log::Level::debug,
+                                     {line2.data(), static_cast<std::size_t>(n)});
+                }
+            }
             std::array<char, core::log::kLineCapacity> row{};
             const int used = std::snprintf(row.data(),
                                            row.size(),
