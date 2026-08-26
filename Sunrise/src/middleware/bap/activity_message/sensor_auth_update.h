@@ -182,6 +182,15 @@ struct Snapshot final {
     bool directorBodyEnabled{};
     std::array<BodyStep, kBodyProgramCapacity> directorBody{};
     std::uint8_t directorBodyCount{};
+    /**
+     * Engagement auth body (slot type 70). The encounter groups publish one engagement slot each and
+     * it has never carried a body, so the combat object is seeded and never told anything. Authored
+     * as a bit-program for the same reason the script is: the field layout is not recovered, only the
+     * width, so it must be tunable without a rebuild. Off unless enabled.
+     */
+    bool engagementBodyEnabled{};
+    std::array<BodyStep, kBodyProgramCapacity> engagementBody{};
+    std::uint8_t engagementBodyCount{};
 };
 
 /**

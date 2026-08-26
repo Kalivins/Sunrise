@@ -26,6 +26,10 @@ constexpr unsigned kSquadAuthLimit = 32;
  *  publish whole; the encoder writes the type-30 schema the slot descriptor names. */
 constexpr std::uint8_t kMonitorSlotType = 30;
 constexpr unsigned kMonitorAuthLimit = 5;
+/** Engagement slot type, and how many get an auth body. One per encounter group, so a small cap
+ *  covers the whole set. */
+constexpr std::uint8_t kEngagementSlotType = 70;
+constexpr unsigned kEngagementAuthLimit = 4;
 
 /**
  * SCOPED SENSOR PROBE (diagnostic). Chosen's sensor/squad objects (type-30 slots) that the roster
@@ -329,6 +333,7 @@ bool resolve_object(const reader::Source& source,
         built = declared.count > 0 && declared.count <= layouts::kRosterSlotCapacity;
         unsigned squadBodies = 0;
         unsigned monitorBodies = 0;
+        unsigned engagementBodies = 0;
         for (std::uint64_t index = 0; built && index < declared.count; ++index) {
             tables::Slot declaredSlot{};
             if (!tables::object_slot_at(storage.object, declared, index, declaredSlot)
@@ -348,6 +353,10 @@ bool resolve_object(const reader::Source& source,
             } else if (declaredSlot.type == kMonitorSlotType && monitorBodies < kMonitorAuthLimit) {
                 flags = layouts::kSlotAuthFlag;
                 ++monitorBodies;
+            } else if (declaredSlot.type == kEngagementSlotType
+                       && engagementBodies < kEngagementAuthLimit) {
+                flags = layouts::kSlotAuthFlag;
+                ++engagementBodies;
             }
             candidate.slotFlags[index] = flags;
             candidate.slotIndices[index] = static_cast<std::uint16_t>(index);

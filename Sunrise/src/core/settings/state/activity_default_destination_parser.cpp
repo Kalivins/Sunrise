@@ -105,6 +105,8 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
     bool hasScriptBody = false;
     bool hasDirectorBodyEnabled = false;
     bool hasDirectorBody = false;
+    bool hasEngagementBodyEnabled = false;
+    bool hasEngagementBody = false;
     bool hasIncidentEmitEnabled = false;
     bool hasIncidentTarget = false;
     bool hasIncidentSweepEnabled = false;
@@ -299,6 +301,17 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
                 return false;
             }
             hasDirectorBody = true;
+        } else if (key == "engagement_body_enabled") {
+            if (hasEngagementBodyEnabled || !boolean(output.engagementBodyEnabled)) {
+                return false;
+            }
+            hasEngagementBodyEnabled = true;
+        } else if (key == "engagement_body") {
+            if (hasEngagementBody
+                || !bit_program(output.engagementBody, output.engagementBodyCount)) {
+                return false;
+            }
+            hasEngagementBody = true;
         } else if (key == "incident_emit_enabled") {
             if (hasIncidentEmitEnabled || !boolean(output.incidentEmitEnabled)) {
                 return false;

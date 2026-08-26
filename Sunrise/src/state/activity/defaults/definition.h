@@ -201,6 +201,15 @@ struct ActivityDefaults final {
     bool directorBodyEnabled{};
     std::array<CommandBodyStep, kCommandBodyCapacity> directorBody{};
     std::uint8_t directorBodyCount{};
+    /**
+     * Engagement auth body (slot type 70). Every encounter group publishes one engagement slot and
+     * none of them has ever carried a body: the object the mission uses for combat is seeded and
+     * then never addressed. The recovered width is 23 bits; the field layout is not recovered, so
+     * this is a settings-authored bit-program like the script body. Off by default.
+     */
+    bool engagementBodyEnabled{};
+    std::array<CommandBodyStep, kCommandBodyCapacity> engagementBody{};
+    std::uint8_t engagementBodyCount{};
 };
 
 } // namespace sunrise::state::activity::defaults
