@@ -380,36 +380,61 @@ __declspec(noinline) bool __fastcall squad_authority_gate_body() noexcept {
  * @return The native answer, unchanged.
  */
 __declspec(noinline) void* __fastcall squad_authority_resolver_body(void* owner) noexcept {
+    // The trampoline is resolved once and then called directly. Going through the coordinator on
+    // every call throttled the load enough to hang it: this runs inside the roster decode, which
+    // already holds a lease, so each call contended with the scope that invoked it.
+    static std::atomic<void*> g_original{nullptr};
+    auto trampoline =
+        reinterpret_cast<SquadAuthorityResolver>(g_original.load(std::memory_order_relaxed));
+    if (trampoline == nullptr) {
+        coordinator::CallLease lease{};
+        coordinator::g_callIngress(
+            lease, HookSlot::squadAuthorityResolver, coordinator::ConsumerKind::none);
+        trampoline = reinterpret_cast<SquadAuthorityResolver>(lease.original);
+        if (trampoline != nullptr) {
+            g_original.store(reinterpret_cast<void*>(trampoline), std::memory_order_relaxed);
+        }
+        coordinator::g_callEgress();
+    }
     const auto caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
-    coordinator::CallLease lease{};
-    coordinator::g_callIngress(
-        lease, HookSlot::squadAuthorityResolver, coordinator::ConsumerKind::none);
-    const auto call = reinterpret_cast<SquadAuthorityResolver>(lease.original);
     void* result = nullptr;
     __try {
-        if (call != nullptr) {
-            result = call(owner);
+        if (trampoline != nullptr) {
+            result = trampoline(owner);
         }
-        static std::atomic<unsigned> g_resolverLines{0};
-        if (g_resolverLines.fetch_add(1, std::memory_order_relaxed) < 4) {
-            const std::uintptr_t base = g_imageBase.load(std::memory_order_relaxed);
-            const auto rva = static_cast<std::uint32_t>(base != 0 ? caller - base : 0);
-            std::array<char, 128> line{};
-            const int written =
-                std::snprintf(line.data(),
-                              line.size(),
-                              "ev=bubbleauth stage=squadresolve caller=0x%08X owner=%p found=%u",
-                              rva,
-                              owner,
-                              static_cast<unsigned>(result != nullptr));
-            if (written > 0) {
-                core::log::write(core::log::Channel::client,
-                                 core::log::Level::info,
-                                 {line.data(), static_cast<std::size_t>(written)});
-            }
+    } __except (1) {
+        return nullptr;
+    }
+    // One line per distinct caller, not per call. A per-call budget spends itself on whichever
+    // caller runs first and never shows the other, which is the open question here: whether the
+    // consumer the encoder names reaches this at all.
+    static std::array<std::atomic<std::uint32_t>, 8> g_seenCallers{};
+    static std::atomic<unsigned> g_seenCount{0};
+    const std::uintptr_t base = g_imageBase.load(std::memory_order_relaxed);
+    const auto rva = static_cast<std::uint32_t>(base != 0 ? caller - base : 0);
+    const unsigned count = g_seenCount.load(std::memory_order_relaxed);
+    for (unsigned index = 0; index < count; ++index) {
+        if (g_seenCallers[index].load(std::memory_order_relaxed) == rva) {
+            return result;
         }
-    } __finally {
-        coordinator::g_callEgress();
+    }
+    if (count >= g_seenCallers.size()) {
+        return result;
+    }
+    g_seenCallers[count].store(rva, std::memory_order_relaxed);
+    g_seenCount.store(count + 1, std::memory_order_relaxed);
+    std::array<char, 128> line{};
+    const int written =
+        std::snprintf(line.data(),
+                      line.size(),
+                      "ev=bubbleauth stage=squadresolve caller=0x%08X owner=%p found=%u",
+                      rva,
+                      owner,
+                      static_cast<unsigned>(result != nullptr));
+    if (written > 0) {
+        core::log::write(core::log::Channel::client,
+                         core::log::Level::info,
+                         {line.data(), static_cast<std::size_t>(written)});
     }
     return result;
 }
