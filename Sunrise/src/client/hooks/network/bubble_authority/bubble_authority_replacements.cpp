@@ -210,6 +210,7 @@ void try_open_seed_door(void* roster) noexcept {
     static std::atomic_bool g_doorReported{false};
     const void* content = nullptr;
     unsigned before = 0;
+    std::uint32_t counterBefore = 0;
     bool wrote = false;
     __try {
         auto* base = static_cast<std::uint8_t*>(roster);
@@ -217,6 +218,17 @@ void try_open_seed_door(void* roster) noexcept {
         before = base[kBindingOffset];
         if (content != nullptr && before == 0) {
             base[kBindingOffset] = 1;
+            wrote = true;
+        }
+        // The seed machine tests two fields, not one. With the binding byte set the lane still
+        // reads its load counter, and a value above the door makes the machine skip the lane
+        // outright: neither seeded nor cleared, which is the held lane. Every measured run reports
+        // 0xFFFFFFFF here, so the second test never passes and forcing only the first changes
+        // nothing. Bring the counter under the door on the same guard as the binding: a real
+        // content object is attached, so the lane has something to seed.
+        counterBefore = *reinterpret_cast<const std::uint32_t*>(base + kLoadCounterOffset);
+        if (content != nullptr && counterBefore > kLoadCounterDoor) {
+            *reinterpret_cast<std::uint32_t*>(base + kLoadCounterOffset) = 0;
             wrote = true;
         }
     } __except (1) {
@@ -228,10 +240,12 @@ void try_open_seed_door(void* roster) noexcept {
     std::array<char, 160> line{};
     const int written = std::snprintf(line.data(),
                                       line.size(),
-                                      "ev=bubbleauth stage=door result=%s content=%p binding=%u",
+                                      "ev=bubbleauth stage=door result=%s content=%p binding=%u "
+                                      "counter=%u",
                                       wrote ? "opened" : "held",
                                       content,
-                                      before);
+                                      before,
+                                      counterBefore);
     if (written > 0) {
         core::log::write(core::log::Channel::client,
                          core::log::Level::info,
