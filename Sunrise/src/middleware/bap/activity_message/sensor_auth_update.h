@@ -151,6 +151,12 @@ struct Snapshot final {
      * all nineteen absent, which leaves a seeded squad naming nothing; six of them are references,
      * and which one names the spawn rule is not recovered, so the choice is swept from settings.
      */
+    /**
+     * Name the block's own group in the squad reference instead of one fixed key. A squad and the
+     * spawn rule it belongs with sit in the same group, so a single key names that pairing for at
+     * most one encounter; the block's own key names it for every one.
+     */
+    bool squadReferenceOwnGroup{};
     bool squadReferenceEnabled{};
     /** Give each squad body a different one of the six references, keyed by its slot index, so one
      *  run tries them all instead of one per launch. */
@@ -324,6 +330,7 @@ auth_body_bits(const Snapshot& snapshot, std::uint8_t slotType, bool carriesPlay
  */
 [[nodiscard]] bool write_auth_body(encoding::bits::Writer& writer,
                                    const Snapshot& snapshot,
+                                   std::uint32_t key,
                                    std::uint8_t slotType,
                                    std::uint16_t slotIndex,
                                    bool carriesPlayerKey) noexcept;

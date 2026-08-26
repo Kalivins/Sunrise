@@ -110,6 +110,8 @@ struct ActivityDefaults final {
      * absent, so a seeded squad names nothing to follow. Which optional names the spawn rule is not
      * recovered, so it is chosen here and swept without a rebuild. Off by default.
      */
+    /** Name the block's own group in the squad reference instead of one fixed key. */
+    bool squadReferenceOwnGroup{};
     bool squadReferenceEnabled{};
     /** Spread the six references across the squad slots by index, so one run tries them all. */
     bool squadReferenceSweep{};

@@ -272,6 +272,7 @@ auth_body_bits(const Snapshot& snapshot, std::uint8_t slotType, bool carriesPlay
 /** Writes one slot's auth body. */
 bool write_auth_body(bits::Writer& writer,
                      const Snapshot& snapshot,
+                     std::uint32_t key,
                      std::uint8_t slotType,
                      std::uint16_t slotIndex,
                      bool carriesPlayerKey) noexcept {
@@ -306,8 +307,13 @@ bool write_auth_body(bits::Writer& writer,
             if (encoded && open) {
                 // The reference the optional opens: registry key, then the slot type and index at
                 // the biases the block header uses, so it names a slot the roster published.
+                // The block's own group when asked for it: an encounter keeps its squad and its
+                // spawn rule in one group, so a fixed key names that pairing for a single encounter
+                // while the block's own names it for all of them.
+                const std::uint32_t target =
+                    snapshot.squadReferenceOwnGroup ? key : snapshot.squadReferenceKey;
                 encoded =
-                    writer.write(snapshot.squadReferenceKey, 32)
+                    writer.write(target, 32)
                     && writer.write(std::uint32_t{snapshot.squadReferenceSlotType} + kSlotTypeBias,
                                     kSlotTypeWidth)
                     && writer.write(std::uint32_t{snapshot.squadReferenceSlotIndex}

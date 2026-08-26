@@ -171,7 +171,7 @@ bool write_object_block(bits::Writer& writer,
         encoded =
             writer.write(1, kPresenceWidth) && writer.write(body > 0 ? 1U : 0U, kPresenceWidth);
         if (encoded && body > 0) {
-            encoded = write_auth_body(writer, snapshot, slotType, slotIndex, carriesPlayerKey);
+            encoded = write_auth_body(writer, snapshot, key, slotType, slotIndex, carriesPlayerKey);
         }
     }
     // A sense-present bit of one costs 35 more bits, not one, so it is always sent absent.

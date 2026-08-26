@@ -90,6 +90,7 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
     bool hasMonitorBodySlotType = false;
     bool hasMonitorBodySlotIndex = false;
     bool hasMonitorBodyValue = false;
+    bool hasSquadReferenceOwnGroup = false;
     bool hasSquadReferenceEnabled = false;
     bool hasSquadReferenceSweep = false;
     bool hasSquadReferenceOptional = false;
@@ -195,6 +196,11 @@ bool Parser::activity_settings(state::activity::defaults::ActivityDefaults& outp
                 return false;
             }
             hasSquadReferenceEnabled = true;
+        } else if (key == "squad_reference_own_group") {
+            if (hasSquadReferenceOwnGroup || !boolean(output.squadReferenceOwnGroup)) {
+                return false;
+            }
+            hasSquadReferenceOwnGroup = true;
         } else if (key == "squad_reference_sweep") {
             if (hasSquadReferenceSweep || !boolean(output.squadReferenceSweep)) {
                 return false;
