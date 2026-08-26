@@ -235,6 +235,9 @@ fill_roster(const layouts::Definition& layout, Scratch& scratch,
             }
             unsigned squad = 0;
             unsigned monitor = 0;
+            unsigned lifetime = 0;
+            unsigned script = 0;
+            unsigned director = 0;
             // A reference into this group names a slot by the index the roster publishes, and the
             // full-declaration builder publishes the declaration position rather than the object's
             // own slot index, so the blueprint's numbers do not apply. Report the positions.
@@ -252,6 +255,12 @@ fill_roster(const layouts::Definition& layout, Scratch& scratch,
                                                       static_cast<unsigned>(entry.slotIndices[slot]));
                         squadUsed += put > 0 ? static_cast<std::size_t>(put) : 0;
                     }
+                } else if (entry.slotTypes[slot] == 17) {
+                    ++lifetime;
+                } else if (entry.slotTypes[slot] == 18) {
+                    ++script;
+                } else if (entry.slotTypes[slot] == 35) {
+                    ++director;
                 } else if (entry.slotTypes[slot] == 30) {
                     ++monitor;
                     if (monitorUsed + 8 < monitorAt.size()) {
@@ -268,14 +277,15 @@ fill_roster(const layouts::Definition& layout, Scratch& scratch,
             const int used = std::snprintf(row.data(),
                                            row.size(),
                                            "ev=activity stage=table i=%zu key=0x%08X slots=%u "
-                                           "squad=%u monitor=%u squad_at=%s monitor_at=%s",
+                                           "squad=%u monitor=%u life=%u script=%u dir=%u",
                                            index,
                                            entry.registryKey,
                                            static_cast<unsigned>(entry.slotCount),
                                            squad,
                                            monitor,
-                                           squadAt.data(),
-                                           monitorAt.data());
+                                           lifetime,
+                                           script,
+                                           director);
             if (used > 0) {
                 core::log::write(core::log::Channel::server,
                                  core::log::Level::debug,
