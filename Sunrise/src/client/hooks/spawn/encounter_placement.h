@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <string_view>
 
 namespace sunrise::client::hooks::spawn::encounter {
 
@@ -23,7 +24,14 @@ namespace sunrise::client::hooks::spawn::encounter {
 void clear() noexcept;
 
 /**
- * Appends the player position to the authored table, as a row waiting for its combatant.
+ * Chooses what the next recorded row will be.
+ * @param kind Authored word for the kind: squad, wave, trigger, door, voice, music.
+ * @param args Argument bag the row carries, such as `combatant=phalanx`.
+ */
+void configure_recorder(std::string_view kind, std::string_view args) noexcept;
+
+/**
+ * Appends the player position to the authored table, as a row of the configured kind.
  * @return True when the row reached the file.
  */
 [[nodiscard]] bool record_here() noexcept;

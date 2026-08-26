@@ -1,5 +1,7 @@
 #include "spawn_panel.h"
 
+#include "../../../client/hooks/spawn/encounter_placement.h"
+
 #include <Windows.h>
 
 #include <algorithm>
@@ -379,6 +381,60 @@ void refresh() noexcept {
     g_scanned = true;
 }
 
+/** Authoring kinds the recorder can write, in the order the panel lists them. */
+constexpr std::array<const char*, 6> kRecordKinds{
+    "squad", "wave", "trigger", "door", "voice", "music"};
+
+/**
+ * Draws the recorder controls and pushes their state down to the placement table.
+ *
+ * A squad row needs the entity that belongs at the spot, and the panel is where that choice is
+ * already made, so it travels with the kind instead of being filled in later from memory.
+ * @param column The main spawner column, whose selection names the combatant.
+ */
+void draw_recorder(const Column& column) noexcept {
+    if (!ImGui::TreeNodeEx("Record to table", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+        return;
+    }
+    static int kindIndex = 0;
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if (ImGui::BeginCombo("##record_kind", kRecordKinds[static_cast<std::size_t>(kindIndex)])) {
+        for (int index = 0; index < static_cast<int>(kRecordKinds.size()); ++index) {
+            const bool chosen = index == kindIndex;
+            if (ImGui::Selectable(kRecordKinds[static_cast<std::size_t>(index)], chosen)) {
+                kindIndex = index;
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    std::array<char, 192> args{};
+    const bool hasSelection = column.selected < column.candidates.size();
+    if (kindIndex == 0 && hasSelection) {
+        // The label carries the display name first, so cut at the separator the picker draws.
+        const std::string_view label{column.candidates[column.selected].label.data()};
+        const std::size_t bar = label.find(" |");
+        const std::string_view name = bar == std::string_view::npos ? label : label.substr(0, bar);
+        const int written = std::snprintf(args.data(),
+                                          args.size(),
+                                          "combatant=%.*s",
+                                          static_cast<int>(name.size()),
+                                          name.data());
+        if (written <= 0) {
+            args[0] = '\0';
+        }
+    }
+    native::encounter::configure_recorder(kRecordKinds[static_cast<std::size_t>(kindIndex)],
+                                          {args.data()});
+
+    ImGui::TextUnformatted(args[0] != '\0' ? args.data() : "no arguments");
+    if (ImGui::Button("Record player position", ImVec2(-FLT_MIN, 0.0F))) {
+        (void)native::encounter::record_here();
+    }
+    ImGui::TextDisabled("F6 records without opening this panel.");
+    ImGui::TreePop();
+}
+
 [[nodiscard]] const char* preview(const Column& column) noexcept {
     return column.selected < column.candidates.size()
                ? column.candidates[column.selected].label.data()
@@ -464,6 +520,8 @@ void draw_settings(Column& column, const char* id, SpawnAllMode spawnAllMode) no
                      2000.0F,
                      "%.0f");
     ImGui::EndGroup();
+
+    draw_recorder(column);
 
     if (ImGui::TreeNodeEx("Transform", ImGuiTreeNodeFlags_SpanAvailWidth)) {
         ImGui::Checkbox("Camera rotation", &column.settings.useCameraRotation);

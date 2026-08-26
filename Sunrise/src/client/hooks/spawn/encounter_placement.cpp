@@ -33,13 +33,68 @@ constexpr std::size_t kRowCapacity = 512;
 /** A combatant of this name is a row whose content named its enemy by hash, not by base name. */
 constexpr std::string_view kUnresolvedCombatant = "?";
 
+/** What a row asks for. Only `squad` has a consumer today; the rest are authored ahead of theirs. */
+enum class Kind : std::uint8_t {
+    squad,    ///< place a combatant
+    wave,     ///< a group of squads released together
+    trigger,  ///< a volume that fires other rows
+    door,     ///< a door and what unlocks it
+    voice,    ///< a line of dialogue and its subtitle
+    music,    ///< a music stem transition
+    unknown,
+};
+
 struct Row {
+    Kind kind{Kind::unknown};
     std::array<char, 64> name{};
-    std::array<char, 64> combatant{};
+    std::array<char, 192> args{};
     std::array<float, 3> position{};
     std::array<float, 4> rotation{};
     bool placed{};
 };
+
+/** @return The kind one authored word names, or unknown. */
+[[nodiscard]] Kind kind_of(std::string_view text) noexcept {
+    if (text == "squad") { return Kind::squad; }
+    if (text == "wave") { return Kind::wave; }
+    if (text == "trigger") { return Kind::trigger; }
+    if (text == "door") { return Kind::door; }
+    if (text == "voice") { return Kind::voice; }
+    if (text == "music") { return Kind::music; }
+    return Kind::unknown;
+}
+
+/** @return The authored word for one kind, for a log line. */
+[[nodiscard]] const char* kind_name(Kind kind) noexcept {
+    switch (kind) {
+    case Kind::squad: return "squad";
+    case Kind::wave: return "wave";
+    case Kind::trigger: return "trigger";
+    case Kind::door: return "door";
+    case Kind::voice: return "voice";
+    case Kind::music: return "music";
+    default: return "unknown";
+    }
+}
+
+/**
+ * Reads one value out of a key=value argument bag.
+ * @param args Whole argument column, space separated.
+ * @param key Key to find, without its equals sign.
+ * @return The value, or empty when the key is absent.
+ */
+[[nodiscard]] std::string_view argument(std::string_view args, std::string_view key) noexcept {
+    while (!args.empty()) {
+        const std::size_t space = args.find(' ');
+        const std::string_view pair = space == std::string_view::npos ? args : args.substr(0, space);
+        args = space == std::string_view::npos ? std::string_view{} : args.substr(space + 1);
+        const std::size_t equals = pair.find('=');
+        if (equals != std::string_view::npos && pair.substr(0, equals) == key) {
+            return pair.substr(equals + 1);
+        }
+    }
+    return {};
+}
 
 std::vector<Row> g_rows;
 std::atomic<std::size_t> g_placed{0};
@@ -69,7 +124,8 @@ void report(const char* format, ...) noexcept {
     return text;
 }
 
-void copy_into(std::array<char, 64>& field, std::string_view text) noexcept {
+template <std::size_t N>
+void copy_into(std::array<char, N>& field, std::string_view text) noexcept {
     const std::size_t length = (std::min)(text.size(), field.size() - 1);
     std::memcpy(field.data(), text.data(), length);
     field[length] = '\0';
@@ -102,13 +158,13 @@ template <std::size_t N>
 }
 
 /**
- * Parses one authored row: `name | combatant | x y z | qx qy qz qw`.
+ * Parses one authored row: `kind | name | args | x y z | qx qy qz qw`.
  * @param text One line, comments and blanks already rejected by the caller.
  * @param row Cleared by the caller; filled only on success.
  * @return True when all four columns parsed.
  */
 [[nodiscard]] bool parse_row(std::string_view text, Row& row) noexcept {
-    std::array<std::string_view, 4> columns{};
+    std::array<std::string_view, 5> columns{};
     for (std::size_t index = 0; index < columns.size(); ++index) {
         const std::size_t bar = text.find('|');
         if (index + 1 < columns.size() && bar == std::string_view::npos) {
@@ -120,12 +176,13 @@ template <std::size_t N>
     if (columns[0].empty() || columns[1].empty()) {
         return false;
     }
-    copy_into(row.name, columns[0]);
-    copy_into(row.combatant, columns[1]);
-    if (!read_floats(columns[2], row.position)) {
+    row.kind = kind_of(columns[0]);
+    copy_into(row.name, columns[1]);
+    copy_into(row.args, columns[2]);
+    if (!read_floats(columns[3], row.position)) {
         return false;
     }
-    if (!read_floats(columns[3], row.rotation)) {
+    if (!read_floats(columns[4], row.rotation)) {
         row.rotation = {0.0F, 0.0F, 0.0F, 1.0F};
     }
     return true;
@@ -205,6 +262,11 @@ template <std::size_t N>
 
 /** Rows written by the recorder are numbered from this, so a table stays readable. */
 std::atomic<unsigned> g_recorded{0};
+/** What the next recorded row will be. Set from the panel, so one walk can author several kinds. */
+std::atomic<Kind> g_recordKind{Kind::squad};
+/** Arguments the next recorded row carries, normally the entity the panel has selected. */
+std::array<char, 192> g_recordArgs{};
+SRWLOCK g_recordLock = SRWLOCK_INIT;
 
 /**
  * Builds the table path once, so the recorder and the loader cannot disagree about where it lives.
@@ -218,6 +280,13 @@ std::atomic<unsigned> g_recorded{0};
 }
 
 } // namespace
+
+void configure_recorder(std::string_view kind, std::string_view args) noexcept {
+    g_recordKind.store(kind_of(kind), std::memory_order_relaxed);
+    AcquireSRWLockExclusive(&g_recordLock);
+    copy_into(g_recordArgs, args);
+    ReleaseSRWLockExclusive(&g_recordLock);
+}
 
 bool record_here() noexcept {
     std::array<float, 3> player{};
@@ -242,13 +311,24 @@ bool record_here() noexcept {
         return false;
     }
     const unsigned ordinal = g_recorded.fetch_add(1, std::memory_order_relaxed) + 1;
-    std::array<char, 192> row{};
+    const Kind kind = g_recordKind.load(std::memory_order_relaxed);
+    AcquireSRWLockShared(&g_recordLock);
+    std::array<char, 192> args = g_recordArgs;
+    ReleaseSRWLockShared(&g_recordLock);
+    if (args[0] == '\0') {
+        args[0] = '?';
+        args[1] = '\0';
+    }
+    std::array<char, 384> row{};
     // The combatant stays unresolved: which enemy belongs here is a decision, and a guessed name
     // would sit in a file whose other rows are extracted fact.
     const int written = std::snprintf(row.data(),
                                       row.size(),
-                                      "recorded_%u | ? | %.3f %.3f %.3f | 0.0000 0.0000 0.0000 1.0000\r\n",
+                                      "%s | recorded_%u | %s | %.3f %.3f %.3f | "
+                                      "0.0000 0.0000 0.0000 1.0000\r\n",
+                                      kind_name(kind),
                                       ordinal,
+                                      args.data(),
                                       static_cast<double>(player[0]),
                                       static_cast<double>(player[1]),
                                       static_cast<double>(player[2]));
@@ -256,8 +336,9 @@ bool record_here() noexcept {
     const bool ok = written > 0
                     && WriteFile(file, row.data(), static_cast<DWORD>(written), &put, nullptr) != 0;
     CloseHandle(file);
-    report("ev=encounter stage=record result=%s row=recorded_%u pos=%.1f,%.1f,%.1f",
+    report("ev=encounter stage=record result=%s kind=%s row=recorded_%u pos=%.1f,%.1f,%.1f",
            ok ? "ok" : "fail",
+           kind_name(kind),
            ordinal,
            static_cast<double>(player[0]),
            static_cast<double>(player[1]),
@@ -399,16 +480,25 @@ void service() noexcept {
         if (dx * dx + dy * dy + dz * dz > radiusSquared) {
             continue;
         }
+        if (row.kind != Kind::squad) {
+            // Authored ahead of its consumer. Say so once rather than silently ignoring a row the
+            // author walked out to record.
+            row.placed = true;
+            report("ev=encounter stage=place result=nokind kind=%s row=%s",
+                   kind_name(row.kind),
+                   row.name.data());
+            continue;
+        }
         std::uint32_t tag = 0;
         std::array<char, 128> matched{};
-        const std::string_view combatant{row.combatant.data()};
+        const std::string_view combatant = argument({row.args.data()}, "combatant");
         if (!resolve_combatant(combatant, tag, matched)) {
             // Mark it done either way: an unresolved combatant will not resolve on the next frame,
             // and retrying every frame would search the whole catalogue at frame rate.
             row.placed = true;
-            report("ev=encounter stage=place result=unresolved squad=%s combatant=%s",
+            report("ev=encounter stage=place result=unresolved squad=%s args=%s",
                    row.name.data(),
-                   row.combatant.data());
+                   row.args.data());
             continue;
         }
         row.placed = true;
