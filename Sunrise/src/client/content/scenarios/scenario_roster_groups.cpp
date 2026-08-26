@@ -30,6 +30,10 @@ constexpr unsigned kMonitorAuthLimit = 5;
  *  covers the whole set. */
 constexpr std::uint8_t kEngagementSlotType = 70;
 constexpr unsigned kEngagementAuthLimit = 4;
+/** Objective slot type, and how many get an auth body. One per combat group; the mission names them
+ *  after the waves they govern. */
+constexpr std::uint8_t kObjectiveSlotType = 3;
+constexpr unsigned kObjectiveAuthLimit = 4;
 
 /**
  * SCOPED SENSOR PROBE (diagnostic). Chosen's sensor/squad objects (type-30 slots) that the roster
@@ -334,6 +338,7 @@ bool resolve_object(const reader::Source& source,
         unsigned squadBodies = 0;
         unsigned monitorBodies = 0;
         unsigned engagementBodies = 0;
+        unsigned objectiveBodies = 0;
         for (std::uint64_t index = 0; built && index < declared.count; ++index) {
             tables::Slot declaredSlot{};
             if (!tables::object_slot_at(storage.object, declared, index, declaredSlot)
@@ -357,6 +362,10 @@ bool resolve_object(const reader::Source& source,
                        && engagementBodies < kEngagementAuthLimit) {
                 flags = layouts::kSlotAuthFlag;
                 ++engagementBodies;
+            } else if (declaredSlot.type == kObjectiveSlotType
+                       && objectiveBodies < kObjectiveAuthLimit) {
+                flags = layouts::kSlotAuthFlag;
+                ++objectiveBodies;
             }
             candidate.slotFlags[index] = flags;
             candidate.slotIndices[index] = static_cast<std::uint16_t>(index);

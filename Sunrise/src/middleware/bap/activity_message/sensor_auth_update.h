@@ -191,6 +191,13 @@ struct Snapshot final {
     bool engagementBodyEnabled{};
     std::array<BodyStep, kBodyProgramCapacity> engagementBody{};
     std::uint8_t engagementBodyCount{};
+    /**
+     * Objective auth body (slot type 3), authored as a bit-program for the same reason as the
+     * engagement body: the width is recovered, the field layout is not. Off unless enabled.
+     */
+    bool objectiveBodyEnabled{};
+    std::array<BodyStep, kBodyProgramCapacity> objectiveBody{};
+    std::uint8_t objectiveBodyCount{};
 };
 
 /**

@@ -210,6 +210,16 @@ struct ActivityDefaults final {
     bool engagementBodyEnabled{};
     std::array<CommandBodyStep, kCommandBodyCapacity> engagementBody{};
     std::uint8_t engagementBodyCount{};
+    /**
+     * Objective auth body (slot type 3). Every combat group publishes one objective slot and none
+     * has carried a body. The mission names them after the waves they govern, so this is the object
+     * that says what an encounter is asking for. Its schema 0x80807f0c measures 2 bits with both
+     * optional blocks absent and 225 with them present, so the width belongs in settings alongside
+     * the values. Off by default.
+     */
+    bool objectiveBodyEnabled{};
+    std::array<CommandBodyStep, kCommandBodyCapacity> objectiveBody{};
+    std::uint8_t objectiveBodyCount{};
 };
 
 } // namespace sunrise::state::activity::defaults

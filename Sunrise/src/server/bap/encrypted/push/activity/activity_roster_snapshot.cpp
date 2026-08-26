@@ -503,6 +503,8 @@ RosterOutcome build_roster_snapshot(Session& session,
     snapshot.directorBodyCount = defaults.directorBodyCount;
     snapshot.engagementBodyEnabled = defaults.engagementBodyEnabled;
     snapshot.engagementBodyCount = defaults.engagementBodyCount;
+    snapshot.objectiveBodyEnabled = defaults.objectiveBodyEnabled;
+    snapshot.objectiveBodyCount = defaults.objectiveBodyCount;
     for (std::size_t index = 0;
          index < defaults.scriptBody.size() && index < snapshot.scriptBody.size(); ++index) {
         snapshot.scriptBody[index].width = defaults.scriptBody[index].width;
@@ -518,6 +520,11 @@ RosterOutcome build_roster_snapshot(Session& session,
          ++index) {
         snapshot.engagementBody[index].width = defaults.engagementBody[index].width;
         snapshot.engagementBody[index].value = defaults.engagementBody[index].value;
+    }
+    for (std::size_t index = 0;
+         index < defaults.objectiveBody.size() && index < snapshot.objectiveBody.size(); ++index) {
+        snapshot.objectiveBody[index].width = defaults.objectiveBody[index].width;
+        snapshot.objectiveBody[index].value = defaults.objectiveBody[index].value;
     }
     // The participation record's `+0` latches only when the region index is known.
     snapshot.region = static_cast<std::uint32_t>(region.index);

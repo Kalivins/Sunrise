@@ -16,6 +16,7 @@ constexpr std::uint8_t kSlotTypeSpawnKeys = 67;
 /** Exit-3 targets: mounted natively, bodyless in Sunrise, filled from a settings bit-program. */
 constexpr std::uint8_t kSlotTypeScript = 18;
 constexpr std::uint8_t kSlotTypeEngagement = 70;
+constexpr std::uint8_t kSlotTypeObjective = 3;
 constexpr std::uint8_t kSlotTypeDirector = 35;
 /** Player monitor. Mounts from the roster but ships seed-only, so it carries no authored state. */
 constexpr std::uint8_t kSlotTypeMonitor = 30;
@@ -272,6 +273,11 @@ auth_body_bits(const Snapshot& snapshot, std::uint8_t slotType, bool carriesPlay
             snapshot.engagementBody.data(),
             program_count(snapshot.engagementBodyCount, snapshot.engagementBody.size()));
     }
+    if (slotType == kSlotTypeObjective && snapshot.objectiveBodyEnabled) {
+        return program_bits(
+            snapshot.objectiveBody.data(),
+            program_count(snapshot.objectiveBodyCount, snapshot.objectiveBody.size()));
+    }
     return 0;
 }
 
@@ -356,6 +362,11 @@ bool write_auth_body(bits::Writer& writer,
             writer,
             snapshot.engagementBody.data(),
             program_count(snapshot.engagementBodyCount, snapshot.engagementBody.size()));
+    } else if (slotType == kSlotTypeObjective && snapshot.objectiveBodyEnabled) {
+        encoded = write_program(
+            writer,
+            snapshot.objectiveBody.data(),
+            program_count(snapshot.objectiveBodyCount, snapshot.objectiveBody.size()));
     }
     return encoded && writer.bit_count() == start + expected;
 }
