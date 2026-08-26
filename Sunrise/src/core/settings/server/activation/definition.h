@@ -57,6 +57,12 @@ struct Settings {
      */
     bool reconstructMissionPolicy{false};
     /**
+     * Forces the squad-authority gate to answer false. Both squad-authority entry points return
+     * without placing anything when the client's own predicate answers true, so this says what
+     * changes when it does not. Diagnostic; off by default.
+     */
+    bool squadGateForceOpen{false};
+    /**
      * Publishes a roster group whose declared slots are only partly resolved, instead of dropping it.
      * Extraction refuses a short group on the reasoning that the client registers a record per
      * declared slot and holds its whole apply while one stays unseeded. That reasoning has never been

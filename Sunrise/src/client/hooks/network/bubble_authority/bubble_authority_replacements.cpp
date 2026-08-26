@@ -188,6 +188,7 @@ void report_once(const char* stage) noexcept {
 
 using Decoder = bool(__fastcall*)(void*, void*, void*);
 using ContentUntracked = bool(__fastcall*)();
+using SquadAuthorityGate = bool(__fastcall*)();
 
 /**
  * Opens the seed machine's first door, behind reconstruct_mission_policy so it is off by default.
@@ -324,7 +325,55 @@ __declspec(noinline) bool __fastcall content_untracked_body() noexcept {
     return result;
 }
 
+/**
+ * Reports the squad-authority gate, and opens it only when the setting asks.
+ *
+ * Both squad-authority entry points consult this predicate and return immediately when it answers
+ * true, so a true answer is enough to explain a mission whose squads never place. The predicate
+ * reads an obfuscated singleton that resolves only at runtime, which is why this is measured rather
+ * than read. The witness runs whatever the setting says, so one build answers both questions: what
+ * the client thinks, and what changes when it thinks otherwise.
+ * @return Native answer, or false when the setting forces the gate open.
+ */
+__declspec(noinline) bool __fastcall squad_authority_gate_body() noexcept {
+    coordinator::CallLease lease{};
+    coordinator::g_callIngress(lease, HookSlot::squadAuthorityGate, coordinator::ConsumerKind::none);
+    const auto call = reinterpret_cast<SquadAuthorityGate>(lease.original);
+    bool result{};
+    __try {
+        if (call != nullptr) {
+            result = call();
+        }
+        static std::atomic_bool g_gateSeen{false};
+        const bool forced = result && core::settings::get().server.activation.squadGateForceOpen;
+        if (!g_gateSeen.exchange(true, std::memory_order_relaxed)) {
+            std::array<char, 96> line{};
+            const int written = std::snprintf(line.data(),
+                                              line.size(),
+                                              "ev=bubbleauth stage=squadgate native=%u forced=%u",
+                                              static_cast<unsigned>(result),
+                                              static_cast<unsigned>(forced));
+            if (written > 0) {
+                core::log::write(core::log::Channel::client,
+                                 core::log::Level::info,
+                                 {line.data(), static_cast<std::size_t>(written)});
+            }
+        }
+        if (forced) {
+            result = false;
+        }
+    } __finally {
+        coordinator::g_callEgress();
+    }
+    return result;
+}
+
 } // namespace
+
+/** @return The internal-linkage squad-authority gate body, kept safe while the detour is removed. */
+void* squad_authority_gate_entry_point() noexcept {
+    return reinterpret_cast<void*>(&squad_authority_gate_body);
+}
 
 /** @return The internal-linkage decoder body, kept safe while the detour is removed. */
 void* decoder_entry_point() noexcept {

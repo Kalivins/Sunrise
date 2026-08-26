@@ -58,6 +58,11 @@ bool Parser::activation_settings(server::activation::Settings& output) noexcept 
                 return false;
             }
             candidate.reconstructMissionPolicy = value;
+        } else if (key == "squad_gate_force_open") {
+            if (!boolean(value)) {
+                return false;
+            }
+            candidate.squadGateForceOpen = value;
         } else if (key == "roster_short_groups") {
             if (!boolean(value)) {
                 return false;

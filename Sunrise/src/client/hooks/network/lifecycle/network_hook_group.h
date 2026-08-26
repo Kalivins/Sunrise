@@ -19,6 +19,7 @@ inline constexpr std::array kGameSlots{
     HookSlot::contentUntrackedGetter,
     HookSlot::signOnReadinessFailure,
     HookSlot::signOnReadinessReady,
+    HookSlot::squadAuthorityGate,
 };
 
 /** Steam networking hooks, found after SteamAPI_Init. */

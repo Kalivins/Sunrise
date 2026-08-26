@@ -23,6 +23,7 @@ enum class HookSlot : std::size_t {
     contentUntrackedGetter,
     signOnReadinessFailure,
     signOnReadinessReady,
+    squadAuthorityGate,
     count,
 };
 

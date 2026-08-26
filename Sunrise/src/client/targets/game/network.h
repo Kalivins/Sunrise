@@ -20,6 +20,7 @@ struct Targets {
     std::byte* bubbleAuthorityDecoder{};
     std::byte* contentUntrackedGetter{};
     std::byte* contentIdToken{};
+    std::byte* squadAuthorityGate{};
 };
 
 /** Resolves and publishes the complete early network target group. */
