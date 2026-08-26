@@ -26,6 +26,7 @@ enum class Id : std::size_t {
     retailLogEnqueue,
     retailLogSetCategoryVerbosity,
     squadAuthorityGate,
+    squadAuthorityResolver,
     count,
 };
 

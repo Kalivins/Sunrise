@@ -77,6 +77,15 @@ constexpr std::string_view kSquadAuthorityGateText =
 constexpr auto kSquadAuthorityGate =
     signature<signature_length(kSquadAuthorityGateText)>(kSquadAuthorityGateText);
 
+// Matches the resolver the squad-authority consumer calls first: it fetches a container, consults
+// the gate, then walks three entries looking for one whose +0x18 matches its argument. A null return
+// sends the consumer down its fallback branch instead of the resolved-object one.
+constexpr std::string_view kSquadAuthorityResolverText =
+    "48 89 74 24 10 57 48 83 EC 20 48 8B F1 E8 ? ? ? ? 48 8B F8 48 85 C0";
+/** Compiled pattern bytes of the signature text above. */
+constexpr auto kSquadAuthorityResolver =
+    signature<signature_length(kSquadAuthorityResolverText)>(kSquadAuthorityResolverText);
+
 // Matches the 6-slot object resolver whose first instruction names the schema tables.
 constexpr std::string_view kQueuezObjectResolverText =
     "4C 8B 1D ? ? ? ? 45 33 C9 48 63 C2 45 8B D0 48 05 1A 25 00 00 48 8D 14 40 48 C1 E2 05";
@@ -134,6 +143,7 @@ constexpr std::array kDefinitions{
     patterns::Pattern{"retail_log_enqueue", retail_log::kEnqueue},
     patterns::Pattern{"retail_log_set_category_verbosity", retail_log::kSetCategoryVerbosity},
     patterns::Pattern{"squad_authority_gate", kSquadAuthorityGate},
+    patterns::Pattern{"squad_authority_resolver", kSquadAuthorityResolver},
 };
 
 static_assert(kDefinitions.size() == static_cast<std::size_t>(Id::count));

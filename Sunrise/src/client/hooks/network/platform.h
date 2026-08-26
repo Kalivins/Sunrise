@@ -24,6 +24,7 @@ enum class HookSlot : std::size_t {
     signOnReadinessFailure,
     signOnReadinessReady,
     squadAuthorityGate,
+    squadAuthorityResolver,
     count,
 };
 

@@ -54,6 +54,8 @@ bool derive(std::span<const patterns::ImageRange> image,
     resolved.contentUntrackedGetter =
         matches[index(patterns::game::Id::contentUntrackedGetter)].address;
     resolved.squadAuthorityGate = matches[index(patterns::game::Id::squadAuthorityGate)].address;
+    resolved.squadAuthorityResolver =
+        matches[index(patterns::game::Id::squadAuthorityResolver)].address;
     std::byte* const contentIdTokenLoad =
         matches[index(patterns::game::Id::contentIdTokenLoad)].address;
     if (!relative::resolve(contentIdTokenLoad,

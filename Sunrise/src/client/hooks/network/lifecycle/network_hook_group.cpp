@@ -31,6 +31,7 @@ constexpr std::array<const char*, kHandleCount> kSlotNames{
     "signon_readiness_failure",
     "signon_readiness_ready",
     "squad_authority_gate",
+    "squad_authority_resolver",
 };
 // A short table would zero-fill its tail and shift every later name onto the wrong slot.
 static_assert(kSlotNames.back() != nullptr);

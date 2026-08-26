@@ -18,6 +18,7 @@ namespace {
         signon::readiness_entry_point(),
         signon::ready_entry_point(),
         bubble_authority::squad_authority_gate_entry_point(),
+        bubble_authority::squad_authority_resolver_entry_point(),
     };
 }
 
@@ -43,6 +44,7 @@ GameSpecs game_specs() noexcept {
         hooking::detour::Spec{resolved.signOnReadinessFailure, replacements[4]},
         hooking::detour::Spec{resolved.signOnReadinessReady, replacements[5]},
         hooking::detour::Spec{resolved.squadAuthorityGate, replacements[6]},
+        hooking::detour::Spec{resolved.squadAuthorityResolver, replacements[7]},
     };
 }
 

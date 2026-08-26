@@ -189,6 +189,7 @@ void report_once(const char* stage) noexcept {
 using Decoder = bool(__fastcall*)(void*, void*, void*);
 using ContentUntracked = bool(__fastcall*)();
 using SquadAuthorityGate = bool(__fastcall*)();
+using SquadAuthorityResolver = void*(__fastcall*)(void*);
 
 /**
  * Opens the seed machine's first door, behind reconstruct_mission_policy so it is off by default.
@@ -368,7 +369,57 @@ __declspec(noinline) bool __fastcall squad_authority_gate_body() noexcept {
     return result;
 }
 
+/**
+ * Reports whether the squad-authority resolver runs, who called it, and whether it found an object.
+ *
+ * Every authority published this session assumes this path runs; nothing has measured that. The
+ * return address separates the consumer the encoder names from the other caller, and a null result
+ * means the consumer takes its fallback branch rather than the resolved-object one. Bounded to a few
+ * lines so a per-frame call cannot flood the log.
+ * @param owner Whatever the caller is looking the object up for.
+ * @return The native answer, unchanged.
+ */
+__declspec(noinline) void* __fastcall squad_authority_resolver_body(void* owner) noexcept {
+    const auto caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
+    coordinator::CallLease lease{};
+    coordinator::g_callIngress(
+        lease, HookSlot::squadAuthorityResolver, coordinator::ConsumerKind::none);
+    const auto call = reinterpret_cast<SquadAuthorityResolver>(lease.original);
+    void* result = nullptr;
+    __try {
+        if (call != nullptr) {
+            result = call(owner);
+        }
+        static std::atomic<unsigned> g_resolverLines{0};
+        if (g_resolverLines.fetch_add(1, std::memory_order_relaxed) < 4) {
+            const std::uintptr_t base = g_imageBase.load(std::memory_order_relaxed);
+            const auto rva = static_cast<std::uint32_t>(base != 0 ? caller - base : 0);
+            std::array<char, 128> line{};
+            const int written =
+                std::snprintf(line.data(),
+                              line.size(),
+                              "ev=bubbleauth stage=squadresolve caller=0x%08X owner=%p found=%u",
+                              rva,
+                              owner,
+                              static_cast<unsigned>(result != nullptr));
+            if (written > 0) {
+                core::log::write(core::log::Channel::client,
+                                 core::log::Level::info,
+                                 {line.data(), static_cast<std::size_t>(written)});
+            }
+        }
+    } __finally {
+        coordinator::g_callEgress();
+    }
+    return result;
+}
+
 } // namespace
+
+/** @return The internal-linkage squad-resolver body, kept safe while the detour is removed. */
+void* squad_authority_resolver_entry_point() noexcept {
+    return reinterpret_cast<void*>(&squad_authority_resolver_body);
+}
 
 /** @return The internal-linkage squad-authority gate body, kept safe while the detour is removed. */
 void* squad_authority_gate_entry_point() noexcept {
