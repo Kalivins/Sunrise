@@ -1,0 +1,16 @@
+# Authored squad placements for mission_reunion (package 0x01b1).
+# Read from the mission content: every squad object carries its own world transform.
+# Columns: name | combatant | x y z | qx qy qz qw
+# A combatant of ? is a squad whose content names its enemy by definition hash rather
+# than by base name; feeding more enemy-definition families resolves those.
+squad_cabal_puncher | ? | 391.154 542.625 63.609 | 0.0000 0.0000 0.0000 1.0000
+squad_cabal_runup_1 | ? | 393.761 526.384 61.912 | 0.0000 0.0000 0.0000 1.0000
+squad_cabal_runup_2 | phalanx | 395.383 527.599 61.912 | 0.0000 0.0000 0.0000 1.0000
+squad_cabal_runup_3 | ? | 393.633 529.412 61.912 | 0.0000 0.0000 0.0000 1.0000
+squad_cayde | ? | 390.864 550.152 63.663 | 0.0000 0.0000 0.0000 1.0000
+squad_dropship | dropship | 427.500 487.500 92.500 | 0.0000 0.0000 0.0000 1.0000
+squad_exploding_cabal | ? | 377.045 534.717 64.314 | 0.0000 0.0000 0.0000 1.0000
+squad_fake_dropship | dropship | 421.537 376.174 87.517 | 0.0000 0.0000 0.0000 1.0000
+squad_ikora | ? | 394.161 543.162 63.922 | 0.0000 0.0000 0.0000 1.0000
+squad_mosquito_1 | ? | 421.537 376.174 87.517 | 0.0000 0.0000 0.0000 1.0000
+squad_zavala | ? | 387.993 546.728 63.636 | 0.0000 0.0000 0.0000 1.0000

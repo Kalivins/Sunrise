@@ -54,6 +54,11 @@ bool Parser::client_settings(client::Settings& output) noexcept {
                 return false;
             }
             hasPinReplicatedRecord = true;
+        } else if (key == "encounter_placement_enabled") {
+            if (!boolean(value)) {
+                return false;
+            }
+            candidate.encounterPlacementEnabled = value;
         } else if (key == "hold_spawn") {
             if (hasHoldSpawn || !boolean(candidate.holdSpawn)) {
                 return false;

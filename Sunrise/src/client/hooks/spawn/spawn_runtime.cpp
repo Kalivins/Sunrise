@@ -15,6 +15,7 @@
 #include "../../../core/ui/runtime/ui_visibility_runtime.h"
 #include "../../hooking/detour.h"
 #include "../teleport/runtime.h"
+#include "encounter_placement.h"
 
 namespace sunrise::client::hooks::spawn {
 namespace {
@@ -426,6 +427,7 @@ void __fastcall player_component_update(void* object, void* input, void* authore
         poll_shortcuts();
         service_activations();
         service_request();
+        encounter::service();
     }
 }
 
@@ -471,6 +473,9 @@ bool install() noexcept {
         return false;
     }
     g_installed.store(true, std::memory_order_release);
+    // The authored table is read once here. A missing file is not a failure: the manual spawner is
+    // the feature, and authored placement is an addition that stays silent when nothing authors it.
+    (void)encounter::load();
     core::log::write(core::log::Channel::client,
                      core::log::Level::info,
                      "ev=spawn stage=install result=ok");
@@ -479,6 +484,7 @@ bool install() noexcept {
 
 void uninstall() noexcept {
     g_installed.store(false, std::memory_order_release);
+    encounter::clear();
     cancel();
     (void)hooking::detour::uninstall(g_updateHook);
     g_updateHook = {};
@@ -536,6 +542,21 @@ bool object_type(std::uint32_t tag, std::uint8_t& type) noexcept {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
+}
+
+bool place_at(std::uint32_t tag,
+              const std::array<float, 3>& world,
+              const std::array<float, 4>& rotation,
+              float scale) noexcept {
+    if (!ready() || !std::isfinite(scale) || scale <= 0.0F) {
+        return false;
+    }
+    for (const float value : world) {
+        if (!std::isfinite(value)) {
+            return false;
+        }
+    }
+    return spawn_one(tag, world, rotation, scale) != kInvalidDatum;
 }
 
 bool request(std::uint32_t tag,

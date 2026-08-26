@@ -234,6 +234,7 @@
     <ClCompile Include="src\client\hooks\teleport\teleport_lifecycle.cpp" />
     <ClCompile Include="src\client\hooks\teleport\teleport_move.cpp" />
     <ClCompile Include="src\client\hooks\teleport\teleport_action_key.cpp" />
+    <ClCompile Include="src\client\hooks\spawn\encounter_placement.cpp" />
     <ClCompile Include="src\client\hooks\spawn\spawn_runtime.cpp" />
     <ClCompile Include="src\client\hooking\detour.cpp" />
     <ClCompile Include="src\client\hooking\detour\protected_detour_uninstall.cpp" />
@@ -931,6 +932,7 @@
     <ClInclude Include="src\client\input\window_focus.h" />
     <ClInclude Include="src\client\hooks\teleport\internal.h" />
     <ClInclude Include="src\client\hooks\teleport\runtime.h" />
+    <ClInclude Include="src\client\hooks\spawn\encounter_placement.h" />
     <ClInclude Include="src\client\hooks\spawn\spawn_runtime.h" />
     <ClInclude Include="src\client\ui\movement\movement_panel.h" />
     <ClInclude Include="src\client\runtime\internal.h" />

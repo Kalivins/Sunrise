@@ -47,6 +47,12 @@ struct Settings {
      * the only thing that can turn an allowed spawn into a refusal.
      */
     bool holdSpawn{true};
+    /**
+     * Places a mission the authored squads it already carries, as the player comes within range of
+     * each one. The table is data on disk, so a placement changes without a rebuild. Off by default
+     * because it puts combatants in the world that nothing yet despawns.
+     */
+    bool encounterPlacementEnabled{false};
     /** How long the spawn waits for a load. `hold_spawn` decides whether it waits at all. */
     std::uint64_t spawnHoldMs{kDefaultSpawnHoldMs};
 };
