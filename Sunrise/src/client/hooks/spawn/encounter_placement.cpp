@@ -290,6 +290,38 @@ void service() noexcept {
     }
     constexpr float radiusSquared = kPlacementRadius * kPlacementRadius;
 
+    // Periodic witness. A service that never runs and one that runs but matches nothing look the
+    // same in an empty log, so report the player position against the closest authored row.
+    static std::atomic<std::uint64_t> g_nextProbe{0};
+    static std::atomic<unsigned> g_probes{0};
+    const std::uint64_t now = GetTickCount64();
+    if (now >= g_nextProbe.load(std::memory_order_relaxed)
+        && g_probes.fetch_add(1, std::memory_order_relaxed) < 8) {
+        g_nextProbe.store(now + 3000, std::memory_order_relaxed);
+        AcquireSRWLockShared(&g_lock);
+        float best = -1.0F;
+        const char* nearest = "none";
+        for (const Row& row : g_rows) {
+            const float dx = row.position[0] - player[0];
+            const float dy = row.position[1] - player[1];
+            const float dz = row.position[2] - player[2];
+            const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (best < 0.0F || distance < best) {
+                best = distance;
+                nearest = row.name.data();
+            }
+        }
+        const std::size_t rows = g_rows.size();
+        ReleaseSRWLockShared(&g_lock);
+        report("ev=encounter stage=probe player=%.1f,%.1f,%.1f nearest=%s distance=%.1f rows=%zu",
+               static_cast<double>(player[0]),
+               static_cast<double>(player[1]),
+               static_cast<double>(player[2]),
+               nearest,
+               static_cast<double>(best),
+               rows);
+    }
+
     AcquireSRWLockExclusive(&g_lock);
     for (Row& row : g_rows) {
         if (row.placed) {
