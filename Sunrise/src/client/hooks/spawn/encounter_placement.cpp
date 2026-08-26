@@ -189,12 +189,30 @@ template <std::size_t N>
     return false;
 }
 
+/**
+ * Resolves the module this code lives in, so the table is looked up beside settings.json.
+ * The path helper refuses a null module, and passing one made this function fail before it could
+ * report anything, which reads exactly like a table that loaded and placed nothing.
+ * @return This module, or null when the lookup fails.
+ */
+[[nodiscard]] HMODULE own_module() noexcept {
+    HMODULE module = nullptr;
+    const bool found = GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                                              | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                          reinterpret_cast<LPCWSTR>(&trim),
+                                          &module)
+                       != FALSE;
+    return found ? module : nullptr;
+}
+
 } // namespace
 
 bool load() noexcept {
     core::path::Buffer tablePath;
-    if (!core::path::artifact_directory(nullptr, tablePath)
+    HMODULE module = own_module();
+    if (module == nullptr || !core::path::artifact_directory(module, tablePath)
         || !core::path::append(tablePath, kTableSuffix)) {
+        report("ev=encounter stage=load result=nopath");
         return false;
     }
     const HANDLE file = CreateFileW(tablePath.chars.data(),
