@@ -14,6 +14,7 @@ bool Parser::client_settings(client::Settings& output) noexcept {
     bool hasForceJoinRequestReady = false;
     bool hasRegionPrivate = false;
     bool hasPinReplicatedRecord = false;
+    bool hasEncounterPlacementEnabled = false;
     bool hasHoldSpawn = false;
     bool hasSpawnHoldMs = false;
     if (consume('}')) {
@@ -55,10 +56,10 @@ bool Parser::client_settings(client::Settings& output) noexcept {
             }
             hasPinReplicatedRecord = true;
         } else if (key == "encounter_placement_enabled") {
-            if (!boolean(value)) {
+            if (hasEncounterPlacementEnabled || !boolean(candidate.encounterPlacementEnabled)) {
                 return false;
             }
-            candidate.encounterPlacementEnabled = value;
+            hasEncounterPlacementEnabled = true;
         } else if (key == "hold_spawn") {
             if (hasHoldSpawn || !boolean(candidate.holdSpawn)) {
                 return false;

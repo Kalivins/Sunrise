@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string_view>
 #include <vector>
@@ -77,6 +78,32 @@ void copy_into(std::array<char, 64>& field, std::string_view text) noexcept {
 }
 
 /**
+ * Reads a fixed count of floats from one whitespace-separated column.
+ * @param text Column text, not NUL-terminated.
+ * @param out Receives one float per slot; untouched unless every slot parsed.
+ * @return True when the column held exactly enough finite numbers.
+ */
+template <std::size_t N>
+[[nodiscard]] bool read_floats(std::string_view text, std::array<float, N>& out) noexcept {
+    std::array<char, 160> buffer{};
+    const std::size_t length = (std::min)(text.size(), buffer.size() - 1);
+    std::memcpy(buffer.data(), text.data(), length);
+    buffer[length] = '\0';
+    const char* cursor = buffer.data();
+    std::array<float, N> parsed{};
+    for (std::size_t index = 0; index < N; ++index) {
+        char* next = nullptr;
+        parsed[index] = std::strtof(cursor, &next);
+        if (next == cursor || !std::isfinite(parsed[index])) {
+            return false;
+        }
+        cursor = next;
+    }
+    out = parsed;
+    return true;
+}
+
+/**
  * Parses one authored row: `name | combatant | x y z | qx qy qz qw`.
  * @param text One line, comments and blanks already rejected by the caller.
  * @param row Cleared by the caller; filled only on success.
@@ -97,28 +124,10 @@ void copy_into(std::array<char, 64>& field, std::string_view text) noexcept {
     }
     copy_into(row.name, columns[0]);
     copy_into(row.combatant, columns[1]);
-    std::array<char, 128> numbers{};
-    const std::size_t positionLength = (std::min)(columns[2].size(), numbers.size() - 1);
-    std::memcpy(numbers.data(), columns[2].data(), positionLength);
-    numbers[positionLength] = '\0';
-    if (std::sscanf(numbers.data(),
-                    "%f %f %f",
-                    &row.position[0],
-                    &row.position[1],
-                    &row.position[2])
-        != 3) {
+    if (!read_floats(columns[2], row.position)) {
         return false;
     }
-    const std::size_t rotationLength = (std::min)(columns[3].size(), numbers.size() - 1);
-    std::memcpy(numbers.data(), columns[3].data(), rotationLength);
-    numbers[rotationLength] = '\0';
-    if (std::sscanf(numbers.data(),
-                    "%f %f %f %f",
-                    &row.rotation[0],
-                    &row.rotation[1],
-                    &row.rotation[2],
-                    &row.rotation[3])
-        != 4) {
+    if (!read_floats(columns[3], row.rotation)) {
         row.rotation = {0.0F, 0.0F, 0.0F, 1.0F};
     }
     return true;
