@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <imgui.h>
 #include <string_view>
 #include <vector>
 
@@ -286,6 +287,86 @@ void configure_recorder(std::string_view kind, std::string_view args) noexcept {
     AcquireSRWLockExclusive(&g_recordLock);
     copy_into(g_recordArgs, args);
     ReleaseSRWLockExclusive(&g_recordLock);
+}
+
+bool draw_markers() noexcept {
+    if (!core::settings::get().client.encounterMarkersEnabled) {
+        return false;
+    }
+    std::array<float, 3> eye{};
+    std::array<float, 3> forward{};
+    if (!teleport::current_camera_pose(eye, forward)) {
+        return false;
+    }
+    const float length =
+        std::sqrt(forward[0] * forward[0] + forward[1] * forward[1] + forward[2] * forward[2]);
+    if (!(length > 1.0e-4F)) {
+        return false;
+    }
+    const std::array<float, 3> ahead{forward[0] / length, forward[1] / length, forward[2] / length};
+    // Right and up from world up, so a marker keeps its place when the camera pitches. Roll is
+    // assumed zero, which holds for a first-person camera on foot.
+    std::array<float, 3> right{ahead[1], -ahead[0], 0.0F};
+    const float rightLength = std::sqrt(right[0] * right[0] + right[1] * right[1]);
+    if (!(rightLength > 1.0e-4F)) {
+        return false;
+    }
+    right = {right[0] / rightLength, right[1] / rightLength, 0.0F};
+    const std::array<float, 3> up{right[1] * ahead[2] - right[2] * ahead[1],
+                                  right[2] * ahead[0] - right[0] * ahead[2],
+                                  right[0] * ahead[1] - right[1] * ahead[0]};
+
+    const ImVec2 screen = ImGui::GetIO().DisplaySize;
+    if (screen.x < 2.0F || screen.y < 2.0F) {
+        return false;
+    }
+    // The horizontal field of view is a setting rather than a read of the account value, because a
+    // marker that lands beside its object is worse than none, and correcting the projection should
+    // not cost a build. The default matches the account default.
+    const auto degrees = static_cast<float>(core::settings::get().client.encounterMarkerFov);
+    const float fov = (degrees > 30.0F && degrees < 170.0F ? degrees : 85.0F) * 3.14159265F / 180.0F;
+    const float focal = (screen.x * 0.5F) / std::tan(fov * 0.5F);
+    ImDrawList* const list = ImGui::GetForegroundDrawList();
+    unsigned drawn = 0;
+
+    AcquireSRWLockShared(&g_lock);
+    for (const Row& row : g_rows) {
+        const std::array<float, 3> delta{row.position[0] - eye[0],
+                                         row.position[1] - eye[1],
+                                         row.position[2] - eye[2]};
+        const float depth =
+            delta[0] * ahead[0] + delta[1] * ahead[1] + delta[2] * ahead[2];
+        if (depth < 1.0F) {
+            continue;
+        }
+        const float across = delta[0] * right[0] + delta[1] * right[1] + delta[2] * right[2];
+        const float rise = delta[0] * up[0] + delta[1] * up[1] + delta[2] * up[2];
+        const ImVec2 at{screen.x * 0.5F + across / depth * focal,
+                        screen.y * 0.5F - rise / depth * focal};
+        if (at.x < -60.0F || at.y < -40.0F || at.x > screen.x + 60.0F || at.y > screen.y + 40.0F) {
+            continue;
+        }
+        // A row that placed reads as done; one still waiting reads as work. The distance is what
+        // decides whether walking further is worth it, so it travels with the name.
+        const ImU32 tint = row.placed ? IM_COL32(120, 200, 160, 210) : IM_COL32(212, 140, 90, 230);
+        list->AddCircle(at, 7.0F, tint, 0, 2.0F);
+        list->AddLine(ImVec2(at.x - 11.0F, at.y), ImVec2(at.x - 3.0F, at.y), tint, 1.5F);
+        list->AddLine(ImVec2(at.x + 3.0F, at.y), ImVec2(at.x + 11.0F, at.y), tint, 1.5F);
+        std::array<char, 96> label{};
+        const int written = std::snprintf(label.data(),
+                                          label.size(),
+                                          "%s  %.0fm",
+                                          row.name.data(),
+                                          static_cast<double>(depth));
+        if (written > 0) {
+            const ImVec2 text{at.x + 14.0F, at.y - 7.0F};
+            list->AddText(ImVec2(text.x + 1.0F, text.y + 1.0F), IM_COL32(0, 0, 0, 170), label.data());
+            list->AddText(text, tint, label.data());
+        }
+        ++drawn;
+    }
+    ReleaseSRWLockShared(&g_lock);
+    return drawn != 0;
 }
 
 bool record_here() noexcept {

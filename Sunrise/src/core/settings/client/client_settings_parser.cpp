@@ -15,6 +15,8 @@ bool Parser::client_settings(client::Settings& output) noexcept {
     bool hasRegionPrivate = false;
     bool hasPinReplicatedRecord = false;
     bool hasEncounterPlacementEnabled = false;
+    bool hasEncounterMarkersEnabled = false;
+    bool hasEncounterMarkerFov = false;
     bool hasEncounterPlacementRadius = false;
     bool hasHoldSpawn = false;
     bool hasSpawnHoldMs = false;
@@ -61,6 +63,18 @@ bool Parser::client_settings(client::Settings& output) noexcept {
                 return false;
             }
             hasEncounterPlacementEnabled = true;
+        } else if (key == "encounter_markers_enabled") {
+            if (hasEncounterMarkersEnabled || !boolean(candidate.encounterMarkersEnabled)) {
+                return false;
+            }
+            hasEncounterMarkersEnabled = true;
+        } else if (key == "encounter_marker_fov") {
+            std::uint64_t value = 0;
+            if (hasEncounterMarkerFov || !unsigned_integer(value) || value < 30 || value > 170) {
+                return false;
+            }
+            candidate.encounterMarkerFov = static_cast<std::uint32_t>(value);
+            hasEncounterMarkerFov = true;
         } else if (key == "encounter_placement_radius") {
             std::uint64_t value = 0;
             if (hasEncounterPlacementRadius || !unsigned_integer(value) || value == 0

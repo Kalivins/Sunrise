@@ -36,6 +36,14 @@ void configure_recorder(std::string_view kind, std::string_view args) noexcept;
  */
 [[nodiscard]] bool record_here() noexcept;
 
+/**
+ * Draws every authored row as a world marker on the current frame.
+ * Called from the frame the renderer already builds, so it must report whether it submitted
+ * anything: a frame nobody claims is dropped before the draw data is read.
+ * @return True when at least one marker was submitted.
+ */
+[[nodiscard]] bool draw_markers() noexcept;
+
 /** Rows loaded from the authored tables. */
 [[nodiscard]] std::size_t row_count() noexcept;
 

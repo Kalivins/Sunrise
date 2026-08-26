@@ -6,6 +6,7 @@
 #include <imgui_impl_win32.h>
 
 #include "../../../../core/ui/busy/busy.h"
+#include "../../spawn/encounter_placement.h"
 #include "../../../../core/ui/fonts/runtime/ui_runtime_font_lifecycle.h"
 #include "../../../../core/ui/hud/overlay.h"
 #include "../../../../core/ui/layout/layout.h"
@@ -143,11 +144,12 @@ void render_frame_locked() noexcept {
     // A hidden surface still draws until its close animation ends, so the layout decides. The
     // HUD, running-work and notice overlays draw whether the surface is open or not. The HUD
     // goes first, so the surface stays above it when the two meet.
+    const bool markersDrawn = sunrise::client::hooks::spawn::encounter::draw_markers();
     const bool hudDrawn = core::ui::hud::draw(visibility.enabled);
     const bool surfaceDrawn = core::ui::layout::render(visibility.visible);
     const bool busyDrawn = core::ui::busy::draw();
     const bool noticeDrawn = core::ui::notice::draw();
-    if (!hudDrawn && !surfaceDrawn && !busyDrawn && !noticeDrawn) {
+    if (!markersDrawn && !hudDrawn && !surfaceDrawn && !busyDrawn && !noticeDrawn) {
         // A frame nobody claimed still drains backend state, and sends no draw data.
         ImGui::EndFrame();
         return;

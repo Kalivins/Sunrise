@@ -59,6 +59,13 @@ struct Settings {
      */
     bool encounterPlacementEnabled{false};
     /**
+     * Draws the authored rows as markers in the world. Surveying happens on foot, so what is
+     * already authored belongs in front of the surveyor rather than in a separate plan.
+     */
+    bool encounterMarkersEnabled{false};
+    /** Horizontal field of view the markers project through, in degrees. */
+    std::uint32_t encounterMarkerFov{85};
+    /**
      * Metres from an authored position at which its squad is placed. The content chooses how far
      * apart a mission spreads its encounters, so no compiled constant is right for every table.
      */
