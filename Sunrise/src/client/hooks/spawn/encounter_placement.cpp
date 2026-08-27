@@ -206,11 +206,39 @@ template <std::size_t N>
  * @param matched Receives the catalogue name that matched, for the log line.
  * @return True when a resident entity matched.
  */
-[[nodiscard]] bool resolve_combatant(std::string_view combatant,
-                                     std::uint32_t& tag,
-                                     std::array<char, 128>& matched) noexcept {
+/** Why a combatant name did or did not become a placeable tag. */
+enum class Resolution {
+    resolved,      ///< a catalogue name matched and its tag is resident
+    nonResident,   ///< a name matched but its definition is not streamed in (the streaming wall)
+    noName,        ///< no catalogue name contained the authored word (a table typo, or "?")
+};
+
+[[nodiscard]] bool name_contains(std::string_view text, std::string_view needle) noexcept {
+    for (std::size_t start = 0; start + needle.size() <= text.size(); ++start) {
+        std::size_t index = 0;
+        while (index < needle.size() && lowered(text[start + index]) == lowered(needle[index])) {
+            ++index;
+        }
+        if (index == needle.size()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Resolves an authored combatant name to a resident tag.
+ *
+ * A name that matches the catalogue but whose definition is not streamed in is reported apart from a
+ * name that matches nothing: the first is the streaming wall, the second is a table typo, and only
+ * separating them tells a run which it hit. The matched name is filled in the non-resident case too,
+ * so the log names the exact definition a mission would need made resident.
+ */
+[[nodiscard]] Resolution resolve_combatant(std::string_view combatant,
+                                           std::uint32_t& tag,
+                                           std::array<char, 128>& matched) noexcept {
     if (combatant == kUnresolvedCombatant) {
-        return false;
+        return Resolution::noName;
     }
     static std::vector<state::build_data::entity_names::Name> names;
     if (names.empty()) {
@@ -218,31 +246,32 @@ template <std::size_t N>
         std::size_t written = 0;
         if (names.empty() || !state::build_data::entity_names::snapshot(names, written)) {
             names.clear();
-            return false;
+            return Resolution::noName;
         }
         names.resize(written);
     }
+    bool matchedName = false;
     for (const auto& entry : names) {
-        const std::string_view text{entry.text.data(), entry.length};
-        bool found = false;
-        for (std::size_t start = 0; !found && start + combatant.size() <= text.size(); ++start) {
-            std::size_t index = 0;
-            while (index < combatant.size()
-                   && lowered(text[start + index]) == lowered(combatant[index])) {
-                ++index;
-            }
-            found = index == combatant.size();
-        }
-        if (!found || !spawn::is_tag_resident(entry.tag)) {
+        if (!name_contains({entry.text.data(), entry.length}, combatant)) {
             continue;
         }
-        tag = entry.tag;
-        const std::size_t length = (std::min<std::size_t>)(entry.length, matched.size() - 1);
-        std::memcpy(matched.data(), entry.text.data(), length);
-        matched[length] = '\0';
-        return true;
+        // Remember the first matching name even if it is not resident, so a run that hits only the
+        // streaming wall still reports the definition it was reaching for.
+        if (!matchedName) {
+            matchedName = true;
+            const std::size_t length = (std::min<std::size_t>)(entry.length, matched.size() - 1);
+            std::memcpy(matched.data(), entry.text.data(), length);
+            matched[length] = '\0';
+        }
+        if (spawn::is_tag_resident(entry.tag)) {
+            tag = entry.tag;
+            const std::size_t length = (std::min<std::size_t>)(entry.length, matched.size() - 1);
+            std::memcpy(matched.data(), entry.text.data(), length);
+            matched[length] = '\0';
+            return Resolution::resolved;
+        }
     }
-    return false;
+    return matchedName ? Resolution::nonResident : Resolution::noName;
 }
 
 /**
@@ -573,13 +602,23 @@ void service() noexcept {
         std::uint32_t tag = 0;
         std::array<char, 128> matched{};
         const std::string_view combatant = argument({row.args.data()}, "combatant");
-        if (!resolve_combatant(combatant, tag, matched)) {
-            // Mark it done either way: an unresolved combatant will not resolve on the next frame,
-            // and retrying every frame would search the whole catalogue at frame rate.
+        const Resolution resolution = resolve_combatant(combatant, tag, matched);
+        if (resolution != Resolution::resolved) {
+            // Mark it done either way: neither wall clears on the next frame, and retrying every
+            // frame would search the whole catalogue at frame rate. A non-resident definition names
+            // what it reached for, so the log doubles as the residency inventory a mission needs;
+            // a no-name row points at a table typo instead.
             row.placed = true;
-            report("ev=encounter stage=place result=unresolved squad=%s args=%s",
-                   row.name.data(),
-                   row.args.data());
+            if (resolution == Resolution::nonResident) {
+                report("ev=encounter stage=place result=nonresident squad=%s entity=%s args=%s",
+                       row.name.data(),
+                       matched.data(),
+                       row.args.data());
+            } else {
+                report("ev=encounter stage=place result=noname squad=%s args=%s",
+                       row.name.data(),
+                       row.args.data());
+            }
             continue;
         }
         row.placed = true;
