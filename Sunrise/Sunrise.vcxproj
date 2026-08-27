@@ -710,6 +710,7 @@
     <ClCompile Include="src\server\gameplay\gameplay_runtime.cpp" />
     <ClCompile Include="src\server\gameplay\endpoint\gameplay_endpoint.cpp" />
     <ClCompile Include="src\server\gameplay\association\association_host.cpp" />
+    <ClCompile Include="src\server\gameplay\peer\external_frame_stage.cpp" />
     <ClCompile Include="src\server\gameplay\peer\peer_transport.cpp" />
     <ClCompile Include="src\server\gameplay\peer\external_shadow.cpp" />
     <ClCompile Include="src\server\gameplay\physics\backend\navigation_backend.cpp" />
@@ -1360,6 +1361,7 @@
     <ClInclude Include="src\server\gameplay\gameplay_runtime.h" />
     <ClInclude Include="src\server\gameplay\endpoint\gameplay_endpoint.h" />
     <ClInclude Include="src\server\gameplay\association\association_host.h" />
+    <ClInclude Include="src\server\gameplay\peer\external_frame_stage.h" />
     <ClInclude Include="src\server\gameplay\peer\peer_transport.h" />
     <ClInclude Include="src\server\gameplay\peer\external_shadow.h" />
     <ClInclude Include="src\server\gameplay\physics\backend\navigation_backend.h" />
