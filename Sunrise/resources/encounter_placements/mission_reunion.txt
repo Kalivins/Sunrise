@@ -1,18 +1,39 @@
-# Authoring table for mission_reunion.
+# Authoring table for w64_last_city_liberation_activities_01b1.
 # Columns: kind | name | args | x y z | qx qy qz qw
 # kind is one of: squad wave trigger door voice music. Only squad has a consumer today; the
 # others load and report, so a table can be authored in one walk while consumers are built.
 # args is a free key=value bag, so a new kind needs a reader and not a format change.
-# Squad rows below come from the mission content itself: a placed object carries its own
-# transform. A combatant of ? is a squad whose content names its enemy by hash, not by name.
-squad | squad_cabal_puncher | combatant=? | 391.154 542.625 63.609 | 0.0000 0.0000 0.0000 1.0000
-squad | squad_cabal_runup_1 | combatant=? | 393.761 526.384 61.912 | 0.0000 0.0000 0.0000 1.0000
-squad | squad_cabal_runup_2 | combatant=phalanx | 395.383 527.599 61.912 | 0.0000 0.0000 0.0000 1.0000
-squad | squad_cabal_runup_3 | combatant=? | 393.633 529.412 61.912 | 0.0000 0.0000 0.0000 1.0000
-squad | squad_cayde | combatant=? | 390.864 550.152 63.663 | 0.0000 0.0000 0.0000 1.0000
-squad | squad_dropship | combatant=dropship | 427.500 487.500 92.500 | 0.0000 0.0000 0.0000 1.0000
-squad | squad_exploding_cabal | combatant=? | 377.045 534.717 64.314 | 0.0000 0.0000 0.0000 1.0000
-squad | squad_fake_dropship | combatant=dropship | 421.537 376.174 87.517 | 0.0000 0.0000 0.0000 1.0000
-squad | squad_ikora | combatant=? | 394.161 543.162 63.922 | 0.0000 0.0000 0.0000 1.0000
-squad | squad_mosquito_1 | combatant=? | 421.537 376.174 87.517 | 0.0000 0.0000 0.0000 1.0000
-squad | squad_zavala | combatant=? | 387.993 546.728 63.636 | 0.0000 0.0000 0.0000 1.0000
+# Generated from content family 0x01b1 by encounter_table.py.
+# tag= is the entity definition the content itself names, and is what place_at() consumes;
+# combatant= is only a human label, learned from the squads that spell their enemy out.
+# Prefer the tag. A combatant of ? with a real tag is still fully placeable.
+squad | squad_cabal_puncher | combatant=? tag=0x80c1a52d pkg=w64_sandbox_020d | 391.154 542.625 63.609 | 0.0000 0.0000 0.0000 1.0000
+squad | squad_cabal_runup_1 | combatant=? tag=0x80c197cf pkg=w64_sandbox_020c | 393.761 526.384 61.912 | 0.0000 0.0000 0.0000 1.0000
+squad | squad_cabal_runup_2 | combatant=? tag=0x80c1a5ce pkg=w64_sandbox_020d | 395.383 527.599 61.912 | 0.0000 0.0000 0.0000 1.0000
+squad | squad_cabal_runup_3 | combatant=? tag=0x80c1a52d pkg=w64_sandbox_020d | 393.633 529.412 61.912 | 0.0000 0.0000 0.0000 1.0000
+squad | squad_cayde | combatant=? tag=0x80bfaa95 pkg=w64_sandbox_01fd | 390.864 550.152 63.663 | 0.0000 0.0000 0.0000 1.0000
+squad | squad_dropship | combatant=? tag=0x80bfddc8 pkg=w64_globals_01fe | 427.500 487.500 92.500 | 0.0000 0.0000 0.0000 1.0000
+squad | squad_exploding_cabal | combatant=? tag=0x80c1a52d pkg=w64_sandbox_020d | 377.045 534.717 64.314 | 0.0000 0.0000 0.0000 1.0000
+squad | squad_fake_dropship | combatant=? tag=0x80bfddc8 pkg=w64_globals_01fe | 421.537 376.174 87.517 | 0.0000 0.0000 0.0000 1.0000
+squad | squad_ikora | combatant=? tag=0x80bfa621 pkg=w64_sandbox_01fd | 394.161 543.162 63.922 | 0.0000 0.0000 0.0000 1.0000
+squad | squad_mosquito_1 | combatant=? tag=0x80c00a07 pkg=w64_activities_0200 | 421.537 376.174 87.517 | 0.0000 0.0000 0.0000 1.0000
+squad | squad_zavala | combatant=? tag=0x80bfa696 pkg=w64_sandbox_01fd | 387.993 546.728 63.636 | 0.0000 0.0000 0.0000 1.0000
+
+# Definition families these rows draw on, and how many rows need each. Mounting the family
+# is not sufficient: residency is per entity, set by the activity streaming budget.
+#   w64_sandbox_020d                       4 rows
+#   w64_sandbox_01fd                       3 rows
+#   w64_globals_01fe                       2 rows
+#   w64_activities_0200                    1 rows
+#   w64_sandbox_020c                       1 rows
+
+# 11 squads placed from content, 7 still need an in-game walk.
+# The unplaced ones were positioned at runtime by the mission director, which is deleted, so
+# their transforms exist nowhere offline. Listed here so the walk has a checklist:
+#   squad_cabal_dropoff_1                  combatant=? tag=0x80c19b1f pkg=w64_sandbox_020c
+#   squad_cabal_dropoff_2                  combatant=? tag=0x80c1a52d pkg=w64_sandbox_020d
+#   squad_cabal_dropoff_3                  combatant=? tag=0x80c1a52d pkg=w64_sandbox_020d
+#   squad_cabal_dropoff_4                  combatant=? tag=0x80c1a52d pkg=w64_sandbox_020d
+#   squad_cabal_fake_dropoff_1             combatant=? tag=0x80c1a52d pkg=w64_sandbox_020d
+#   squad_cabal_fake_dropoff_2             combatant=? tag=0x80c1a52d pkg=w64_sandbox_020d
+#   squad_cabal_fake_dropoff_3             combatant=? tag=0x80c1a52d pkg=w64_sandbox_020d
