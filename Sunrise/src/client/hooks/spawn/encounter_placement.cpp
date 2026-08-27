@@ -125,6 +125,12 @@ void report(const char* format, ...) noexcept {
     return text;
 }
 
+void copy_into128(std::array<char, 128>& field, std::string_view text) noexcept {
+    const std::size_t length = (std::min)(text.size(), field.size() - 1);
+    std::memcpy(field.data(), text.data(), length);
+    field[length] = '\0';
+}
+
 template <std::size_t N>
 void copy_into(std::array<char, N>& field, std::string_view text) noexcept {
     const std::size_t length = (std::min)(text.size(), field.size() - 1);
@@ -187,6 +193,35 @@ template <std::size_t N>
         row.rotation = {0.0F, 0.0F, 0.0F, 1.0F};
     }
     return true;
+}
+
+/**
+ * Parses a `0x`-prefixed or bare hex tag from an argument value.
+ * @param text Argument value, e.g. "0x80c1a52d".
+ * @return The tag, or zero when the text is not hex (zero is never a valid tag).
+ */
+[[nodiscard]] std::uint32_t parse_tag(std::string_view text) noexcept {
+    if (text.size() > 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X')) {
+        text.remove_prefix(2);
+    }
+    if (text.empty() || text.size() > 8) {
+        return 0;
+    }
+    std::uint32_t value = 0;
+    for (const char c : text) {
+        std::uint32_t digit;
+        if (c >= '0' && c <= '9') {
+            digit = static_cast<std::uint32_t>(c - '0');
+        } else if (c >= 'a' && c <= 'f') {
+            digit = static_cast<std::uint32_t>(c - 'a' + 10);
+        } else if (c >= 'A' && c <= 'F') {
+            digit = static_cast<std::uint32_t>(c - 'A' + 10);
+        } else {
+            return 0;
+        }
+        value = (value << 4) | digit;
+    }
+    return value;
 }
 
 /** @return Lower-cased copy of one character. */
@@ -601,8 +636,26 @@ void service() noexcept {
         }
         std::uint32_t tag = 0;
         std::array<char, 128> matched{};
-        const std::string_view combatant = argument({row.args.data()}, "combatant");
-        const Resolution resolution = resolve_combatant(combatant, tag, matched);
+        const std::string_view args{row.args.data()};
+        Resolution resolution;
+        const std::uint32_t authoredTag = parse_tag(argument(args, "tag"));
+        if (authoredTag != 0) {
+            // The content names its combatant by definition tag, which place_at consumes directly.
+            // Label the log with the human name when the table carries one, else the tag itself.
+            const std::string_view label = argument(args, "combatant");
+            copy_into128(matched, label.empty() || label == kUnresolvedCombatant
+                                      ? std::string_view{argument(args, "tag")}
+                                      : label);
+            if (spawn::is_tag_resident(authoredTag)) {
+                tag = authoredTag;
+                resolution = Resolution::resolved;
+            } else {
+                resolution = Resolution::nonResident;
+            }
+        } else {
+            const std::string_view combatant = argument(args, "combatant");
+            resolution = resolve_combatant(combatant, tag, matched);
+        }
         if (resolution != Resolution::resolved) {
             // Mark it done either way: neither wall clears on the next frame, and retrying every
             // frame would search the whole catalogue at frame rate. A non-resident definition names
