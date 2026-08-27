@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <memory>
 #include <new>
+#include <span>
 #include <string>
 
 #include "../../../../core/settings/settings.h"
@@ -16,6 +17,7 @@
 #include "../../gameplay_log.h"
 #include "../../group/group_host.h"
 #include "../../group/group_host_sessions.h"
+#include "../../peer/external_frame_stage.h"
 #include "../../peer/peer_transport.h"
 #include "../replication/world_coordinator.h"
 #include "bubble_host.h"
@@ -555,6 +557,19 @@ void tick_bound(Storage& table, std::size_t slot, std::uint64_t now) noexcept {
                frameByteCount,
                contribution.commonPresent ? 1 : 0,
                contribution.entityPresent ? 1 : 0);
+        // Hand the encoded body to the established writer, which appends it to the next
+        // acknowledgement when gameplay_external_body is also on. This is the rung the codec header
+        // was waiting for: the frame stops being witnessed and starts being sent.
+        if (finished && frameWriter.bit_count() > 0) {
+            const bool staged = sunrise::server::gameplay::peer::stage_external_frame(
+                std::span<const std::byte>(frameBytes.data(), frameByteCount),
+                frameWriter.bit_count());
+            report(core::log::Level::info, "ev=physics stage=stage result=%s bits=%zu bytes=%zu",
+                   staged ? "ok" : "refused", frameWriter.bit_count(), frameByteCount);
+        }
+        // The outcome stays `lost` even when the body is staged: the send is unacknowledged, and a
+        // create baseline that repeats every pass is what a first live test wants. Advancing the
+        // lifecycle here would turn the next frame into an update and change two things at once.
         static_cast<void>(table.coordinators[slot].settle_frame(*probeServices.replication,
                                                                 *probeServices.common, contribution,
                                                                 packetGeneration,

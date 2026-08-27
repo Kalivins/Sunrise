@@ -13,11 +13,13 @@
 #include "../../../middleware/gameplay/peer/join_messages.h"
 #include "../../../middleware/gameplay/peer/peer_container.h"
 #include "../../../middleware/gameplay/peer/reliable_assembly.h"
+#include "../../../core/settings/settings.h"
 #include "../association/association_host.h"
 #include "../dtls/dtls_host.h"
 #include "../endpoint/gameplay_endpoint.h"
 #include "../gameplay_log.h"
 #include "../group/group_host.h"
+#include "external_frame_stage.h"
 
 namespace sunrise::server::gameplay::peer {
 
@@ -720,6 +722,71 @@ void consume_established(const gp::Endpoint& from,
 }
 
 /**
+ * How many packets may carry an external body in one process run.
+ * The client is only known to parse a body once its own view gate is open, and nothing here proves
+ * that gate is open. If it is not, these bits land where the client expects the filler trailer and
+ * the packet is refused, so the experiment is bounded: past the cap the host writes the same bytes
+ * it always did and the link recovers without a relaunch.
+ */
+constexpr unsigned kExternalBodySendCap = 64;
+
+/** Payload bits written so far in this run, for the witness log. */
+unsigned g_externalBodySends = 0;
+
+/**
+ * Appends the staged external entity frame to one established packet, between the reliable queues
+ * and the filler trailer, which is where `decode_established` reports the external body begins.
+ *
+ * Both gates must be on: `reconstruct_mission_policy` (which is what builds a frame at all) and
+ * `gameplay_external_body`, whose own note says to wire it to the established writer. With either
+ * off, or with nothing staged, the packet keeps its previous shape exactly.
+ *
+ * The body is written only when it provably fits alongside the trailer, because a writer that runs
+ * out of room cannot be rewound: a partial body would cost the acknowledgement this packet exists
+ * to deliver.
+ * @param writer Packet writer positioned immediately after both queues.
+ */
+void append_external_frame(bits::Writer& writer) noexcept {
+    const auto& activation = core::settings::get().server.activation;
+    if (!activation.reconstructMissionPolicy || !activation.gameplayExternalBody
+        || g_externalBodySends >= kExternalBodySendCap) {
+        return;
+    }
+    std::array<std::byte, kExternalFrameCapacity> body{};
+    std::size_t bitCount = 0;
+    if (!take_external_frame(body, bitCount)) {
+        return;
+    }
+    // Two filler flag bits close the packet, and finish() pads to the next byte.
+    constexpr std::size_t kTrailerBits = 2;
+    const std::size_t used = writer.bit_count();
+    const std::size_t capacityBits = kReplyCapacity * kByteBits;
+    if (used + bitCount + kTrailerBits > capacityBits) {
+        report(core::log::Level::warn, "ev=gameplay stage=external result=toobig bits=%zu used=%zu",
+               bitCount, used);
+        return;
+    }
+    // Re-emit exactly the payload bits: the encoder's own padding is not part of the body.
+    bits::Reader reader(body);
+    std::size_t remaining = bitCount;
+    while (remaining > 0) {
+        const auto width = static_cast<std::uint8_t>(remaining < 64 ? remaining : 64);
+        std::uint64_t chunk = 0;
+        if (!reader.read(width, chunk) || !writer.write(chunk, width)) {
+            // The space check ran first, so this cannot be a full buffer; the packet is abandoned
+            // rather than sent half-formed, and the caller reports the failure.
+            report(core::log::Level::warn, "ev=gameplay stage=external result=writefail bits=%zu",
+                   bitCount);
+            return;
+        }
+        remaining -= width;
+    }
+    ++g_externalBodySends;
+    report(core::log::Level::info, "ev=gameplay stage=external result=sent bits=%zu n=%u cap=%u",
+           bitCount, g_externalBodySends, kExternalBodySendCap);
+}
+
+/**
  * Builds and sends one acknowledgement-only packet.
  * @param peer Peer state copied under the lock before the send.
  * @return True when the packet left the endpoint.
@@ -743,8 +810,13 @@ void consume_established(const gp::Endpoint& from,
     std::size_t size = 0;
     // Only the 32-byte queue carries this host's messages; the 6-byte queue stays empty.
     if (!wire::write_head_and_ack(writer, guard, ack) || !wire::write_queue(writer, peer.outbound)
-        || !wire::write_empty_queue(writer) || !wire::write_absent_filler(writer)
-        || !writer.finish(size)) {
+        || !wire::write_empty_queue(writer)) {
+        return false;
+    }
+    // The external entity body sits here, after both queues and before the trailer. It is written
+    // only behind both gates and only when a frame is staged, so the default packet is unchanged.
+    append_external_frame(writer);
+    if (!wire::write_absent_filler(writer) || !writer.finish(size)) {
         return false;
     }
     return send_transport(peer.endpoint, {buffer.data(), size});
