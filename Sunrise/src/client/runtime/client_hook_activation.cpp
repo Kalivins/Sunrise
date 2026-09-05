@@ -16,6 +16,7 @@
 #include "../hooks/bitmap/bitmap_hook_lifecycle.h"
 #include "../hooks/bootflow/bootflow_hook_lifecycle.h"
 #include "../hooks/config_getter/config_getter_lifecycle.h"
+#include "../hooks/connect_probe/connect_probe.h"
 #include "../hooks/cursor/runtime.h"
 #include "../hooks/graphics/graphics_hook_lifecycle.h"
 #include "../hooks/inactivity/inactivity_override.h"
@@ -192,6 +193,9 @@ void clear_game_targets() noexcept {
     // against a loopback host with no relay server, so the channel never connects and the
     // client gives up on its physics join. This forces the direct connect.
     (void)hooks::peer_relay::install();
+    // Read-only entry probe: the client never calls the peer channel connect, so this
+    // reports which of the enclosing functions run at all. Logs and forwards, nothing else.
+    (void)hooks::connect_probe::install();
     content::investment::worker::activate();
     return true;
 }
