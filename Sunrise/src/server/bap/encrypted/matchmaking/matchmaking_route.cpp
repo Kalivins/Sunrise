@@ -2,6 +2,11 @@
 
 #include <Windows.h>
 
+#include <array>
+#include <cstdio>
+
+#include "../../../../core/logging/log.h"
+
 #include "../../../../middleware/bap/matchmaking/request/matchmaking_request_parser.h"
 #include "../../../../middleware/bap/matchmaking/response/matchmaking_response_encoder.h"
 
@@ -79,6 +84,24 @@ bool encode_response(state::matchmaking::ContextHandle context,
         }
     }
     const bool encoded = service::response::encode(response, output, written);
+
+    // No matchmaking line has ever appeared in a log, so an empty answer cannot be told from a
+    // question that was never asked. Report both sides of the exchange once per request.
+    {
+        std::array<char, 160> line{};
+        const int reported = std::snprintf(
+            line.data(), line.size(),
+            "ev=matchmaking stage=svc43 kind=%u req_bytes=%zu result=%s bytes=%zu",
+            static_cast<unsigned>(request.kind),
+            requestBody.size(),
+            encoded ? "ok" : "fail",
+            written);
+        if (reported > 0) {
+            core::log::write(core::log::Channel::server,
+                             core::log::Level::info,
+                             {line.data(), static_cast<std::size_t>(reported)});
+        }
+    }
     state::matchmaking::erase_snapshot(latest);
     if (!encoded) {
         written = 0;
