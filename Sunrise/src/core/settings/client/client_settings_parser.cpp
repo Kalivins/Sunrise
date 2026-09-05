@@ -13,6 +13,7 @@ bool Parser::client_settings(client::Settings& output) noexcept {
     bool hasFadeRelease = false;
     bool hasForceJoinRequestReady = false;
     bool hasRegionPrivate = false;
+    bool hasSuppressPeerRelay = false;
     bool hasPinReplicatedRecord = false;
     bool hasEncounterPlacementEnabled = false;
     bool hasEncounterMarkersEnabled = false;
@@ -53,6 +54,11 @@ bool Parser::client_settings(client::Settings& output) noexcept {
                 return false;
             }
             hasRegionPrivate = true;
+        } else if (key == "suppress_peer_relay") {
+            if (hasSuppressPeerRelay || !boolean(candidate.suppressPeerRelay)) {
+                return false;
+            }
+            hasSuppressPeerRelay = true;
         } else if (key == "pin_replicated_record") {
             if (hasPinReplicatedRecord || !boolean(candidate.pinReplicatedRecord)) {
                 return false;

@@ -41,6 +41,12 @@ struct Settings {
      */
     bool regionPrivate{false};
     /**
+     * Forces the peer channel to connect directly instead of through a NAT relay.
+     * The stock client always relays the gameplay peer channel, which cannot complete against a
+     * loopback host with no relay server. On by default; a client stand-in for the peer relay.
+     */
+    bool suppressPeerRelay{true};
+    /**
      * Pins the participation record to the replicated snapshot at `comp + 496`.
      * Off, the record is the local one at `comp + 1256`, whose spawn-gate byte no wire field
      * reaches.

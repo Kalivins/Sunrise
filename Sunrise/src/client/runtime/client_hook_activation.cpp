@@ -24,6 +24,7 @@
 #include "../hooks/network/runtime.h"
 #include "../hooks/noclip/runtime.h"
 #include "../hooks/package_trust/package_trust_bypass.h"
+#include "../hooks/peer_relay/peer_relay_direct.h"
 #include "../hooks/polled_input/runtime.h"
 #include "../hooks/queuez/queuez_hook_lifecycle.h"
 #include "../hooks/retail_log/retail_log_lifecycle.h"
@@ -187,6 +188,10 @@ void clear_game_targets() noexcept {
     // thing that separates "the client never saw our membership body" from "it saw it and the
     // world container still did not bind".
     (void)hooks::membership_probe::install();
+    // The stock client always relays the gameplay peer channel, which cannot complete
+    // against a loopback host with no relay server, so the channel never connects and the
+    // client gives up on its physics join. This forces the direct connect.
+    (void)hooks::peer_relay::install();
     content::investment::worker::activate();
     return true;
 }

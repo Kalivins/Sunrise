@@ -33,6 +33,7 @@
     "fade_release": true,
     "force_join_request_ready": true,
     "region_private": false,
+    "suppress_peer_relay": true,
     "pin_replicated_record": true,
     "hold_spawn": true,
     "spawn_hold_ms": 30000
